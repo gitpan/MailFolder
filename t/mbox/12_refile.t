@@ -5,7 +5,8 @@ require 't/mbox.pl';
 print "1..16\n";
 
 okay_if(1, $folder = new Mail::Folder('mbox', full_folder()));
-okay_if(2, !$folder->refile(3, $folder));
+eval { $folder->refile(3, $folder); };
+okay_if(2, $@ =~ /exist/);
 okay_if(3, $folder->refile(1, $folder));
 okay_if(4, $folder->dup(2, $folder));
 okay_if(5, $message = $folder->get_header(3));

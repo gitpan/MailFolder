@@ -1,16 +1,15 @@
 + flock locking isn't available yet.  RSN.
 
-+ The Emaul and Maildir interfaces currently perform update_message
-  and append_message against the actual folder instead of in a temp
-  area that would be committed by sync.  This should be fixed before
-  it's out of alpha release.
++ When is the prccess an update_message and append_message actually do
+  their work is inconsistent.  Some do it immediately, some queue it
+  up to be done when sync is called.
 
 + Since it's alpha code, the interface is still subject to change...
   In particular, some of the routines will be changed to accept lists.
   Some of those routines will require rearranging the order of their
   arguments.
 
-+ Fatal and non-fatal errors isn't completely baked yet.
++ Fatal vs. non-fatal errors isn't completely baked yet.
 
 + The regression test for NNTP is lacking (read: nonexistant).
 

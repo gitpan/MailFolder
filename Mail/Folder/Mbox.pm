@@ -1,12 +1,12 @@
 # -*-perl-*-
 #
-# Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+# Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Mbox.pm,v 1.5 1997/04/06 21:06:03 kjj Exp $
+# $Id: Mbox.pm,v 1.6 1998/04/05 17:21:53 kjj Exp $
 
 require 5.00397;
 
@@ -15,9 +15,9 @@ use strict;
 use vars qw($VERSION @ISA $folder_id);
 
 @ISA = qw(Mail::Folder);
-$VERSION = "0.06";
+$VERSION = "0.07";
 
-Mail::Folder::register_folder_type('Mail::Folder::Mbox', 'mbox');
+Mail::Folder->register_type('mbox');
 
 =head1 NAME
 
@@ -80,6 +80,7 @@ use Date::Format;
 use Date::Parse;
 # use File::BasicFlock;
 use IO::File;
+use DirHandle;
 use Sys::Hostname;		# for NFSLock option
 use Carp;
 
@@ -409,9 +410,12 @@ sub get_header {
   my $self = shift;
   my $key = shift;
 
-  return undef unless ($self->SUPER::get_header($key));
+  my $hdr = $self->SUPER::get_header($key);
+  return $hdr if defined($hdr);
+  
+  # return undef unless ($self->SUPER::get_header($key));
 
-  return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
+  # return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
 
   my $file = "$self->{MBOX_WorkingDir}/$key";
 
@@ -540,8 +544,17 @@ sub init {
 
   my $tmpdir = $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp";
 
+  $self->{MBOX_WorkingDir} = undef;
   $folder_id++;
-  $self->{MBOX_WorkingDir} = "$tmpdir/mbox.$folder_id.$$";
+  for my $i ($folder_id .. ($folder_id + 10)) {
+    if (! -e "$tmpdir/mbox$folder_id.$$") {
+      $self->{MBOX_WorkingDir} = "$tmpdir/mbox.$folder_id.$$";
+      last;
+    }
+    $folder_id++;
+  }
+  croak "can't seem to be able to create a working directory\n"
+    unless (defined($self->{MBOX_WorkingDir}));
   $self->set_option('DotLock', 1)
     unless defined($self->get_option('DotLock'));
 
@@ -717,7 +730,16 @@ sub _coerce_header {
 
 sub _clean_working_dir {
   my $self = shift;
-  unlink(glob("$self->{MBOX_WorkingDir}/*"));
+  # unlink(glob("$self->{MBOX_WorkingDir}/*"));
+  # maybe this should filter out directories, just to be safe...
+  my $dir = DirHandle->new($self->{MBOX_WorkingDir})
+    or croak "yeep! can't read $self->{MBOX_WorkingDir} disappeared: $!\n";
+  for my $file ($dir->read) {
+    next if (($file eq '.') || ($file eq '..'));
+    next if (-d "$self->{MBOX_WorkingDir}/$file");
+    unlink "$self->{MBOX_WorkingDir}/$file";
+  }
+  $dir->close;
   rmdir($self->{MBOX_WorkingDir});
 }
 
@@ -764,6 +786,7 @@ sub _lock_folder {
 	return 1;
       }
     RETRY:
+      last if ($! =~ /denied/);	# failure due to permissions
       select(undef, undef, undef, $sleep);
     }
     return 0;
@@ -792,7 +815,7 @@ Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

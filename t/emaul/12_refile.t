@@ -5,7 +5,8 @@ require 't/emaul.pl';
 print "1..18\n";
 
 okay_if(1, $folder = new Mail::Folder('emaul', full_folder()));
-okay_if(2, !$folder->refile(2, $folder));
+eval { $folder->refile(2, $folder); };
+okay_if(2, $@ =~ /exist/);
 okay_if(3, $folder->refile(1, $folder));
 okay_if(4, $message = $folder->get_header(4));
 okay_if(5, $message->get('Subject') eq "arf\n");

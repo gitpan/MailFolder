@@ -1,21 +1,21 @@
 # -*-perl-*-
 #
-# Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+# Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Emaul.pm,v 1.6 1997/04/06 21:06:03 kjj Exp $
+# $Id: Emaul.pm,v 1.7 1998/04/05 17:21:53 kjj Exp $
 
 require 5.00397;
 package Mail::Folder::Emaul;
 use strict;
 use vars qw($VERSION @ISA);
 @ISA = qw(Mail::Folder);
-$VERSION = "0.06";
+$VERSION = "0.07";
 
-Mail::Folder::register_folder_type('Mail::Folder::Emaul', 'emaul');
+Mail::Folder->register_type('emaul');
 
 =head1 NAME
 
@@ -316,10 +316,13 @@ returns.
 sub get_header {
   my $self = shift;
   my $key = shift;
+
+  my $hdr = $self->SUPER::get_header($key);
+  return $hdr if defined($hdr);
   
-  return undef unless $self->SUPER::get_header($key);
+  # return undef unless $self->SUPER::get_header($key);
   
-  return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
+  # return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
 
   my $fh = new IO::File $self->foldername . "/$key" or return undef;
   my $href = new Mail::Header($fh,
@@ -628,7 +631,7 @@ Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

@@ -1,4 +1,38 @@
-$Id: NEWS,v 1.5 1997/04/06 21:06:03 kjj Exp $
+$Id: NEWS,v 1.6 1998/04/05 17:21:53 kjj Exp $
+
+-------------------------------------------------------------------------------
+Version 0.7
+-------------------------------------------------------------------------------
+
+Added dependancy on MIME::* package in Makefile.PL
+
+get_header, get_mime_header, get_message, get_mime_message,
+get_message_file, refile, and dup now generate a fatal error if a
+folder isn't open, or if the message number being retrieved isn't in
+the folder
+
+Mail::Folder::get_header now returns the header if it's already in the
+header cache.  This is for folder interfaces writers.
+(Nick.Ing-Simmons@tiuk.ti.com)
+
+Mail::Folder::Mbox no longer uses globbing when removing file in tmp
+directory.
+
+Mbox folder locking doesn't keep retrying if failure to acquire a lock
+was due to permissions.
+
+Renamed register_folder_type to register_type.  Also, the method only
+takes one argument now. (Nick.Ing-Simmons@tiuk.ti.com)
+
+Fixed incorrect calculation of Content-Length (doh!)
+
+Various bug fixes and performance tweaks.
+
+Various doc tweaks.
+
+Updated module requirements in Makefile.PL
+
+Added a new method 'get_fields'.  Suggested by Nick.Ing-Simmons@tiuk.ti.com.
 
 -------------------------------------------------------------------------------
 Version 0.6

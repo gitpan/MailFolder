@@ -1,12 +1,12 @@
 # -*-perl-*-
 #
-# Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+# Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Maildir.pm,v 1.3 1997/04/06 21:06:03 kjj Exp $
+# $Id: Maildir.pm,v 1.4 1998/04/05 17:21:53 kjj Exp $
 
 require 5.00397;
 package Mail::Folder::Maildir;
@@ -15,9 +15,9 @@ use POSIX qw(ENOENT);
 use vars qw($VERSION @ISA);
 
 @ISA = qw(Mail::Folder);
-$VERSION = "0.06";
+$VERSION = "0.07";
 
-Mail::Folder::register_folder_type('Mail::Folder::Maildir', 'maildir');
+Mail::Folder->register_type('maildir');
 
 my $counter = 0;
 
@@ -271,9 +271,12 @@ sub get_header {
   my $self = shift;
   my $key = shift;
   
-  return undef unless ($self->SUPER::get_header($key));
+  my $hdr = $self->SUPER::get_header($key);
+  return $hdr if defined($hdr);
   
-  return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
+  # return undef unless ($self->SUPER::get_header($key));
+  
+  # return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
   
   my $filename = $self->foldername . "/$self->{Messages}{$key}{Filename}";
 
@@ -388,8 +391,8 @@ and C<new> subdirectories otherwise returns C<0>.
 sub is_valid_folder_format {
   my $foldername = shift;
 
-  return 0 unless (-d $foldername);
-  return 0 unless (-d "$foldername/tmp" &&
+  return 0 unless (-d $foldername &&
+		   -d "$foldername/tmp" &&
 		   -d "$foldername/cur" &&
 		   -d "$foldername/new");
   return 1;
@@ -463,7 +466,7 @@ sub _get_tmp_file {
 }
 
 sub _bump_counter {
-  my $self = shift;
+  # my $self = shift;
   return $counter++;
 }
 
@@ -507,7 +510,7 @@ sub _maildir_clean {
   $dir->close;
 
   for my $file (@files) {
-    next if ($file =~ /^\./);
+    next if ($file =~ /^\./);	# per djb, skip filenames that start with "."
     unlink("$tmpdir/$file") if ((@statary = stat("$tmpdir/$file")) &&
 				($statary[9] + 129600) < $time);
   }
@@ -562,7 +565,7 @@ sub _absorb_folder {
     next if defined($self->{MAILDIR_MsgFiles}{$file});
     $msg_num++;
     $self->remember_message($msg_num);
-    $self->{MAILDIR_MsgFiles}{$file} = $msg_num; # file to msgnum mapping
+    $self->{MAILDIR_MsgFiles}{$file} = $msg_num; # file-to-msgnum mapping
     $self->{Messages}{$msg_num}{Filename} = $file;
 
     next unless ($file =~ /:(.+)$/); # no info field
@@ -586,7 +589,7 @@ Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

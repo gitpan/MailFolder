@@ -1,12 +1,12 @@
 # -*-perl-*-
 #
-# Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+# Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Folder.pm,v 1.6 1997/04/06 21:06:03 kjj Exp $
+# $Id: Folder.pm,v 1.7 1998/04/05 17:21:53 kjj Exp $
 
 require 5.00397;
 
@@ -17,13 +17,11 @@ use vars qw($VERSION %folder_types $DefaultEmptyFileFormat);
 use MIME::Head;
 use MIME::Parser;
 
-$VERSION = "0.06";
+$VERSION = "0.07";
 
 =head1 NAME
 
 Mail::Folder - A folder-independant interface to email folders.
-
-B<WARNING: This code is in alpha release. Expect the interface to change.>
 
 =head1 SYNOPSIS
 
@@ -35,6 +33,8 @@ This base class, and companion subclasses provide an object-oriented
 interface to email folders independant of the underlying folder
 implementation.
 
+B<WARNING: This code is in alpha release. Expect the interface to change.>
+
 The following folder interfaces are provided with this package:
 
 =over 4
@@ -45,7 +45,7 @@ Ye olde standard mailbox format.
 
 =item Mail::Folder::Maildir
 
-An interface to maildir (ala qmail) folders.  This is a very
+An interface to maildir (a la qmail) folders.  This is a very
 interesting folder format.  It is 'missing' some of the nicer features
 that some other folder interfaces have (like the message sequences in
 MH), but is probably one of the more resilient folder formats around.
@@ -53,26 +53,26 @@ MH), but is probably one of the more resilient folder formats around.
 =item Mail::Folder::Emaul
 
 Emaul is a folder interfaces of my own design (in the loosest sense of
-the word :-).  It is vaguely similar to MH.  I wrote it to flesh out
-earlier versions of the C<Mail::Folder> package.
+the word C<:-\)>).  It is vaguely similar to MH.  I wrote it to flesh
+out earlier versions of the C<Mail::Folder> package.
 
 =item Mail::Folder::NNTP
 
-The beginnings of an interface to NNTP.  Some of the C<Mail::Folder>
-methods are not implemented yet, and no regression tests have been
-written yet.
+This is the beginnings of an interface to NNTP.  Some of the
+C<Mail::Folder> methods are not implemented yet, and no regression
+tests have been written.
 
 =back
 
 Here is a snippet of code that retrieves the third message from a
 mythical emaul folder and outputs it to stdout:
 
-    use Mail::Folder::Emaul;
+  use Mail::Folder::Emaul;
 
-    $folder = new Mail::Folder('emaul', "mythicalfolder");
-    $message = $folder->get_message(3);
-    $message->print(\*STDOUT);
-    $folder->close;
+  $folder = new Mail::Folder('emaul', "mythicalfolder");
+  $message = $folder->get_message(3);
+  $message->print(\*STDOUT);
+  $folder->close;
 
 =head1 METHODS
 
@@ -87,32 +87,32 @@ $DefaultEmptyFileFormat = 'mbox';
 
 =head2 new($foldertype, $folder_name [, %options])
 
-Create a new, empty B<Mail::Folder> object of the specified folder
-type.  If C<$folder_name> is specified, then the C<open> method will
-be automatically called with that argument.
+Create a new, empty C<Mail::Folder> object of the specified folder
+type.  If C<$folder_name> is specified, then the C<open> method is
+automatically called with that argument.
 
 If C<$foldertype> is C<'AUTODETECT'> then the foldertype is deduced by
 querying each registered foldertype for a match.
 
 Options are specified as hash items using key and value pairs.
 
-The following options are currently builtin:
+The following options are currently built-in:
 
 =over 2
 
 =item * Create
 
-If set, C<open> will create the folder if it does not already exist.
+If set, C<open> creates the folder if it does not already exist.
 
 =item * Content-Length
 
-If set, the Content-Length header field will be automatically created
-or updated by the C<append_message> and C<update_message> methods.
+If set, the Content-Length header field is automatically created or
+updated by the C<append_message> and C<update_message> methods.
 
 =item * DotLock
 
 If set and appropriate for the folder interface, the folder interface
-will use 'C<.lock>' style folder locking.  Currently, this is only
+uses the 'C<.lock>' style of folder locking.  Currently, this is only
 used by the mbox interface - please refer to the documentation for the
 mbox interface for more information.  This mechanism will probably be
 replaced with something more generalized in the future.
@@ -120,51 +120,51 @@ replaced with something more generalized in the future.
 =item * Flock
 
 If set and appropriate for the folder interface, the folder interface
-will use C<flock> style folder locking.  Currently this is only used
-by the mbox interface - please refer to the documentation for the mbox
-interface for more information.  This mechanism will probably be
+uses the C<flock> style of folder locking.  Currently this is only
+used by the mbox interface - please refer to the documentation for the
+mbox interface for more information.  This mechanism will probably be
 replaced with something more generalized in the future.
 
 =item * NFSLock
 
 If set and appropriate for the folder interface, the folder interface
-will take extra measures necessary to deal with folder locking across
-NFS.  These special measure typically consist of constructing lock
-files in a special manner that is more immune to the atomicity
-problems that NFS has when creating a lock file.  Use of this option
-will generally require the ability to use long filenames on the NFS
-server in question.
+takes extra measures necessary to deal with folder locking across NFS.
+These special measure typically consist of constructing lock files in
+a special manner that is more immune to the atomicity problems that
+NFS has when creating a lock file.  Use of this option generally
+requires the ability to use long filenames on the NFS server in
+question.
 
 =item * NotMUA
 
-If the option is set, the folder interface will still make updates
-like deletes and appends, and the like, but will not save the message
+If the option is set, the folder interface still makes updates like
+deletes and appends, and the like, but does not save the message
 labels or the current message indicator.
 
-If the option is not set (the default), the folder interface will save
-the persistant labels and the current message indicator as appropriate
-for the folder interface.
+If the option is not set (the default), the folder interface saves the
+persistant labels and the current message indicator as appropriate for
+the folder interface.
 
 The default setting is designed for the types of updates to the state
-of mail mssages that a Mail User Agent typically makes.  Programmatic
+of mail mssages that a mail user agent typically makes.  Programmatic
 updates to folders might be better served to turn the option off so
-that labels like 'seen' aren't inadvertantly set and saved when they
-really shouldn't be.
+labels like 'seen' aren't inadvertantly set and saved when they really
+shouldn't be.
 
 =item * Timeout
 
-If this options is set, the folder interface will use it to override
-any default value for Timeout.  For folder interfaces that entail
-network communications it is used to specify the maximum amount of
-time, in seconds, to wait for a response from the server.  For folder
-interfaces that entail local file locking it is used to specify the
-maximum amount of time, in seconds, to wait for a lock to be acquired.
-And for the C<maildir> interface it is, of course, meaningless C<:-)>.
+If this options is set, the folder interface uses it to override any
+default value for C<Timeout>.  For folder interfaces doing network
+communications it is used to specify the maximum amount of time, in
+seconds, to wait for a response from the server.  For folder
+interfaces doing local file locking it is used to specify the maximum
+amount of time, in seconds, to wait for a lock to be acquired.  For
+the C<maildir> interface it is, of course, meaningless C<:-)>.
 
 =item * DefaultFolderType
 
 If the C<Create> option is set and C<AUTODETECT> is being used to
-determine folder type, this option will be used to determine what type
+determine the folder type, this option is used to determine what type
 of folder to create.
 
 =back
@@ -198,10 +198,10 @@ sub new {
     }
     croak("can't AUTODETECT foldertype for $folder\n") unless defined($type);
   }
-  
+
   ($concrete = $folder_types{$type}) or return undef;
   $self = bless {}, $concrete;
-  
+
   $self->{Type} = $type;
   $self->{Name} = '';
   $self->{Current} = 0;
@@ -231,7 +231,7 @@ sub new {
   return undef if (!$self->init);
 
   $self->open($folder) if (defined($folder));
-  
+
   return $self;
 }
 
@@ -243,8 +243,8 @@ Open the given folder and populate internal data structures with
 information about the messages in the folder.  If the C<Create> option
 is set, then the folder will be created if it does not already exist.
 
-The readonly attribute will be set if the underlying folder interface
-determines that the folder is readonly.
+The read-only attribute is set if the underlying folder interface
+determines that the folder is read-only.
 
 Please note that I have not done any testing for using this module
 against system folders.  I am a strong advocate of using a filter
@@ -304,16 +304,16 @@ sub close {
   $_[0]->{Current} = 0;
   $_[0]->{Messages} = {};
   $_[0]->{Readonly} = 0;
-  
+
   return 1;
 }
 
 =head2 sync
 
 Synchronize the folder with the internal data structures.  The folder
-interface will process deletes, updates, appends, refiles, and dups.
-It also reads in any new messages that have arrived in the folder
-since the last time it was either C<open>ed or C<sync>ed.
+interface processes deletes, updates, appends, refiles, and dups.  It
+also reads in any new messages that have arrived in the folder since
+the last time it was either C<open>ed or C<sync>ed.
 
 Folder interface are expected to perform the following tasks:
 
@@ -343,7 +343,7 @@ sub sync {
 
 =head2 pack
 
-For folder formats that may have holes in the message number sequence
+For folder formats that can have holes in the message number sequence
 (like mh) this will rename the files in the folder so that there are
 no gaps in the message number sequence.
 
@@ -359,7 +359,7 @@ Folder interfaces are expected to perform the following tasks:
 
 =item * Perform the guts of the pack
 
-=item * Renumber the C<Messages> member of $self.
+=item * Renumber the C<Messages> member of C<$self>.
 
 =item * Do not forget to update C<current_message> based on the renumbering.
 
@@ -373,14 +373,14 @@ sub pack { return 1; }
 
 =head2 get_message($msg_number)
 
-Retrieve a C<Mail::Internet> reference to specified C<$msg_number>.
-The base class method will return C<0> if a folder has not been opened
-in the object or if the specified C<$msg_number> does not exist.
+Retrieve a C<Mail::Internet> reference to the specified
+C<$msg_number>.  A fatal error is generated if no folder is currently
+open or if C<$msg_number> isn\'t in the folder.
 
 If present, it removes the C<Content-Length> field from the message
 reference that it returns.
 
-It also caches the header just like C<get_header> does.
+It also caches the header just as C<get_header> does.
 
 Folder interfaces are expected to perform the following tasks:
 
@@ -395,8 +395,9 @@ Folder interfaces are expected to perform the following tasks:
 =cut
 
 sub get_message {
-  return((($_[0]->foldername ne '') &&
-	  defined($_[0]->{Messages}{$_[1]})) ? 1 : 0);
+  croak "foldername not set" if ($_[0]->foldername eq '');
+  croak "message doesn't exist" unless defined($_[0]->{Messages}{$_[1]});
+  return 1;
 }
 
 =head2 get_mime_message($msg_number [, parserobject] [, %options])
@@ -406,8 +407,8 @@ C<$msg_number>.  Returns C<undef> on failure.
 
 It essentially calls C<get_message_file> to get a file to parse,
 creates a C<MIME::Parser> object, configures it a little, and then
-calls the C<MIME::Parser->read> method to create the C<MIME::Entity>
-object.
+calls the C<read> method of C<MIME::Parser> to create the
+C<MIME::Entity> object.
 
 If C<parserobject> is specified it will be used instead of an
 internally created parser object.  The parser object is expected to a
@@ -436,15 +437,15 @@ sub get_mime_message {
   my $self = shift;
   my $msg = shift;
   my $parser = @_ % 2 ? shift : undef;
-
+  
   my %options = @_;
-
+  
   $parser ||= new MIME::Parser or return undef;
   croak "$parser isn't a subclass of MIME::ParserBase"
     unless $parser->isa('MIME::ParserBase');
-
+  
   my $file = $self->get_message_file($msg) or return undef;
-
+  
   !defined($options{'output_dir'})
     or $parser->output_dir($options{'output_dir'})
       or return undef;
@@ -454,22 +455,24 @@ sub get_mime_message {
   !defined($options{'output_to_core'})
     or $parser->output_to_core($options{'output_to_core'})
       or return undef;
-
+  
   my $fh = new IO::File $file
     or croak "can't open $file: $!";
   my $entity = $parser->read($fh);
   $fh->close;
-
+  
   return $entity;
 }
 
 =head2 get_message_file($msg_number)
 
 Acts like C<get_message()> except that a filename is returned instead
-of a B<Mail::Internet> object reference.  This might be useful for
-dealing with the B<MIME-tools> package.
+of a C<Mail::Internet> object reference.
 
-Please note that C<get_message_file> does NOT perform any 'From '
+A fatal error is generated if no folder is currently open or if
+C<$msg_number> isn\'t in the folder.
+
+Please note that C<get_message_file> does I<not> perform any 'C<From>'
 escaping or unescaping regardless of the underlying folder
 architecture.  I am working on a mechanism that will resolve any
 resulting issues with this malfeature.
@@ -488,14 +491,18 @@ and return the name of the file.
 =cut
 
 sub get_message_file {
-  return((($_[0]->foldername ne '') &&
-	  defined($_[0]->{Messages}{$_[1]})) ? 1 : 0);
+  croak "foldername not set" if ($_[0]->foldername eq '');
+  croak "message doesn't exist" unless defined($_[0]->{Messages}{$_[1]});
+  return 1;
 }
 
 =head2 get_header($msg_number)
 
-Retrieves a message header.  Returns a reference to a B<Mail::Header>
+Retrieves a message header.  Returns a reference to a C<Mail::Header>
 object.  It caches the result for later use.
+
+A fatal error is generated if no folder is currently open or if
+C<$msg_number> isn\'t in the folder.
 
 Folder interfaces are expected to perform the following tasks:
 
@@ -514,8 +521,10 @@ Folder interfaces are expected to perform the following tasks:
 =cut
 
 sub get_header {
-  return((($_[0]->foldername ne '') &&
-	  defined($_[0]->{Messages}{$_[1]})) ? 1 : 0);
+  croak "foldername not set" if ($_[0]->foldername eq '');
+  croak "message doesn't exist" unless defined($_[0]->{Messages}{$_[1]});
+  return (defined($_[0]->{Messages}{$_[1]}{Header}) ?
+	  $_[0]->{Messages}{$_[1]}{Header} : undef);
 }
 
 =head2 get_mime_header($msg_number)
@@ -524,6 +533,9 @@ Retrieves the message header for the given message and returns a
 reference to C<MIME::Head> object.  It actually calls C<get_header>,
 creates a C<MIME::Head> object, then stuffs the contents of the
 C<Mail::Header> object into the C<MIME::Head> object.
+
+A fatal error is generated if no folder is currently open or if
+C<$msg_number> isn\'t in the folder.
 
 =cut
 
@@ -538,17 +550,48 @@ sub get_mime_header {
   return $mime_href;
 }
 
+=head2 get_fields($msg_number, @fieldnames)
+
+Retrieves the fields, named in C<@fieldnames>, from message
+C<$msg_number>.
+
+At first glance, this method might seem redundant.  After all,
+C<Mail::Header> provides the equivalent functionality. This method is
+provided to allow C<Mail::Folder> interfaces for caching folder
+formats to take advantage of the caching.  Those interfaces can
+override this method as they see fit.
+
+The result is a list of field values in the same order as specified by
+the method arguments.  If called in a list content, the resulting list
+is returned.  If called in a scalar context, a reference to the list
+is returned.
+
+=cut
+
+sub get_fields {
+  my $self = shift;
+  my $msg = shift;
+
+  my $href = $self->get_header($msg);
+  my @results;
+
+  while (@_) {
+    my $val = $href->get(shift);
+    push(@results, $val || '');
+  }
+  return (wantarray) ? @results : $results[0];
+}
+
 ###############################################################################
 
 =head2 append_message($mref)
 
-Add a message to a folder.  Given a reference to a B<Mail::Internet>
-object, append it to the end of the folder.  The result is not
+Add a message to a folder.  Given a reference to a C<Mail::Internet>
+object, it appends it to the end of the folder.  The result is not
 committed to the original folder until a C<sync> is performed.
 
 The C<Content-Length> field is added to the written file if the
 C<Content-Length> option is enabled.
-
 
 This method will, under certain circumstances, alter the message
 reference that was passed to it.  If you are writing a folder
@@ -596,10 +639,10 @@ sub update_message {
   my $self = shift;
   my $key = shift;
   my $mref = shift;
-
+  
   return 0 if (($self->foldername eq '') ||
 	       !defined($self->{Messages}{$key}));
-
+  
   $self->invalidate_header($key);
   $self->_update_content_length($mref) if $self->get_option('Content-Length');
   $self->add_label($key, 'edited');
@@ -625,7 +668,7 @@ sub refile {
   return 0 if (!$mref ||
 	       !$folder->append_message($mref) ||
 	       !$self->delete_message($msg));
-
+  
   return 1;
 }
 
@@ -636,6 +679,9 @@ delete the original message.  Note that this method uses
 C<append_message> so the change will show up in the folder object, but
 will need a C<sync> performed in order for the change to show up in
 the actual folder.
+
+A fatal error is generated if no folder is currently open or if
+C<$msg_number> isn\'t in the folder.
 
 =cut
 
@@ -735,10 +781,12 @@ Returns the message number of the first message in the folder.
 =cut
 
 sub first_message {
-  my @message_list = sort { $a <=> $b } $_[0]->message_list;
-
-  return 0 if ($#message_list == -1);
-  return shift(@message_list);
+  my $first;
+  for my $msg (keys %{$_[0]->{Messages}}) {
+    $first = $msg unless defined $first and $first < $msg;
+  }
+  $first = 0 unless defined($first);
+  return $first;
 }
 
 =head2 last_message
@@ -1380,15 +1428,15 @@ folder interface.
 This section describes the methods that for use by interface writers.
 Refer to the stock folder interfaces for examples of their use.
 
-=head2 register_folder_type($class, $type)
+=head2 register_type($type)
 
 Registers a folder interface with Mail::Folder.
 
 =cut
 
-sub register_folder_type { $folder_types{$_[1]} = $_[0]; }
+sub register_type { $folder_types{$_[1]} = (caller(0))[0] }
 
-=head2 is_valid_folder_format($default, $foldername)
+=head2 is_valid_folder_format($foldername)
 
 In a folder interface, this method should return C<1> if it thinks the
 folder is valid format and return C<0> otherwise.  It is used by the
@@ -1396,11 +1444,14 @@ Mail::Folder C<open> method when C<AUTODETECT> is used as the folder
 type.  The C<open> method iterates through the list of known folder
 interfaces until it finds one that answer yes to the question.
 
-This method is always overrided by the folder interface.
+This method is always overrided by the folder interface.  A fatal
+occurs if it isn\'t.
 
 =cut
 
-sub is_valid_folder_format { return 0; }
+sub is_valid_folder_format {
+  croak "folder interface $_[0] didn't implement is_valid_folder_format\n";
+}
 
 =head2 init
 
@@ -1486,8 +1537,9 @@ sub detect_folder_type {
   my $folder = shift;
 
   for my $type (sort keys %folder_types) {
-    return $type
-      if (eval "$folder_types{$type}::is_valid_folder_format(\"$folder\")");
+    no strict 'refs';
+    my $f = "$folder_types{$type}::is_valid_folder_format";
+    return $type if (&$f($folder));
   }
   return undef;
 }
@@ -1500,7 +1552,16 @@ sub _update_content_length {
 
   return 0 unless $self->get_option('Content-Length');
 
-  my $content_length = $#{$mref->body} + 1;
+  my $content_length = 0;
+
+  for my $line (@{$mref->header}) {
+    $content_length += length $line;
+  }
+  for my $line (@{$mref->body}) {
+    $content_length += length $line;
+  }
+
+  # my $content_length = $#{$mref->body} + 1;
 
   if ($mref->head->count('Content-Length')) {
     $mref->head->replace('Content-Length', $content_length);
@@ -1601,7 +1662,7 @@ Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
+Copyright (c) 1996-1998 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

@@ -1,12 +1,12 @@
 # -*-perl-*-
 #
-# Copyright (c) 1997 Kevin Johnson <kjj@pobox.com>.
+# Copyright (c) 1997-1998 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: NNTP.pm,v 1.2 1997/04/06 21:06:03 kjj Exp $
+# $Id: NNTP.pm,v 1.3 1998/04/05 17:21:53 kjj Exp $
 
 require 5.00397;
 package Mail::Folder::NNTP;
@@ -16,9 +16,9 @@ use Net::NNTP;
 use Mail::Header;
 
 @ISA = qw(Mail::Folder);
-$VERSION = '0.06';
+$VERSION = '0.07';
 
-Mail::Folder::register_folder_type('Mail::Folder::NNTP', 'news');
+Mail::Folder->register_type('news');
 
 =head1 NAME
 
@@ -28,7 +28,7 @@ B<WARNING: This code is in alpha release.  Expect the interface to change.>
 
 =head1 SYNOPSIS
 
-C<use Mail::Folder::Maildir;>
+C<use Mail::Folder::NNTP;>
 
 =head1 DESCRIPTION
 
@@ -98,13 +98,13 @@ sub open {
   $self->{NNTP_Newsgroup} = _extract_newsgroup_name($foldername)
     or croak "can't extract newsgroup from $foldername";
 
-  my $timeout = $self->get_options('Timeout');
+  my $timeout = $self->get_option('Timeout');
   $timeout ||= 120;		# default it if no Timeout option specified
   $self->{NNTP_Connection} = new Net::NNTP($self->{NNTP_Host},
 					   Timeout => $timeout)
     or return 0;
 
-  returned 0 if (!defined($self->_absorb_folder($foldername)));
+  return 0 if (!defined($self->_absorb_folder($foldername)));
 
   $self->current_message($self->first_message);
 
@@ -172,7 +172,7 @@ sub get_message {
   my $self = shift;
   my $key = shift;
 
-  return undef unless $self->SUPRT::get_message($key);
+  return undef unless $self->SUPER::get_message($key);
 
   my $article = $self->{NNTP_Connection}->article($key)
     or return undef;
@@ -219,9 +219,12 @@ sub get_header {
   my $self = shift;
   my $key = shift;
 
-  return undef unless ($self->SUPER::get_header($key));
+  my $hdr = $self->SUPER::get_header($key);
+  return $hdr if defined($hdr);
 
-  return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
+  # return undef unless ($self->SUPER::get_header($key));
+
+  # return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
 
   if (my $header = $self->{NNTP_Connection}->head($key)) {
     my $href = new Mail::Header($header, Modify => 0) or return undef;
@@ -329,7 +332,7 @@ Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1997 Kevin Johnson <kjj@pobox.com>.
+Copyright (c) 1997-1998 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

@@ -7,12 +7,14 @@ print "1..24\n";
 okay_if(1, $folder = new Mail::Folder('emaul', full_folder()));
 
 okay_if(2, $message = $folder->get_header(1));
-okay_if(3, !($message = $folder->get_header(9999)));
+eval { $message = $folder->get_header(9999); };
+okay_if(3, $@ =~ /exist/);
 okay_if(4, $message = $folder->get_message(1));
 okay_if(5, $#{$message->body} == 0);
 okay_if(6, $filename = $folder->get_message_file(1));
 okay_if(7, -e $filename);
-okay_if(8, !$folder->get_message_file(9998));
+eval { $folder->get_message_file(9998); };
+okay_if(8, $@ =~ /exist/);
 okay_if(9, $subject = $message->get('subject'));
 okay_if(10, $subject eq "arf\n");
 okay_if(11, $message = $folder->get_mime_header(1));
