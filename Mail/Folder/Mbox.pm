@@ -1,15 +1,21 @@
 # -*-perl-*-
 #
-# Copyright (c) 1996 Kevin Johnson <kjj@primenet.com>.
+# Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
 #
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Mbox.pm,v 1.2 1996/08/03 17:32:21 kjj Exp $
+# $Id: Mbox.pm,v 1.4 1997/03/18 02:37:38 kjj Exp $
 
 package Mail::Folder::Mbox;
+use strict;
+use vars qw($VERSION @ISA $folder_id);
+
 @ISA = qw(Mail::Folder);
+$VERSION = "0.05";
+
+Mail::Folder::register_folder_type('Mail::Folder::Mbox', 'mbox');
 
 =head1 NAME
 
@@ -28,78 +34,34 @@ This module provides an interface to unix B<mbox> folders.
 
 The B<mbox> folder format is the standard monolithic folder structure
 prevalent on Unix.  A single folder is contained within a single file.
-Each message starts with a line matching C</^From />.
+Each message starts with a line matching C</^From /> and ends with a
+blank line.
 
-The folder architecture doesn't provide any persistantly stored
+The folder architecture does not provide any persistantly stored
 current message variable, so the current message in this folder
 interface defaults to C<1> and is not retained between C<open>s of a
 folder.
 
-C<Mbox> needs the following module packages:
-
-=over 2
-
-=item C<TimeDate>
-
-=item C<File-Tools>
-
-=item C<File-BasicFLock>
-
-=back
+If a C<Timeout> option is specified when the object is created, that
+value will be used to determine the timeout for attempting to aquire
+a folder lock.  The default is 10 seconds.
 
 =cut
 
 use Mail::Folder;
 use Mail::Internet;
+use Mail::Header;
+use MIME::Head;
 use Mail::Address;
-use Carp;
-use File::Tools;
 use Date::Format;
 use Date::Parse;
 use File::BasicFlock;
-
-use vars qw($VERSION);
-
-$VERSION = "0.03";
+use IO::File;
+use Carp;
 
 $folder_id = 0;			# used to generate a unique id per open folder
 
-Mail::Folder::register_folder_type(Mail::Folder::Mbox, 'mbox');
-
 =head1 METHODS
-
-=head2 init
-
-Initializes various items specific to B<Mbox>.
-
-=over 2
-
-=item * Determines an appropriate temporary directory.
-
-=item * Bumps a sequence number used for unique temporary filenames.
-
-=item * Initializes C<$self-E<gt>{WorkingFile}> to the name of a file that
-will be used to hold the temporary working of the folder.
-
-=item * Initializes C<$self-E<gt>{MsgFilePrefix}> to a string that will be
-used to create temporary filenames when extracting messages from the
-folder.
-
-=back
-
-=cut
-
-sub init {
-  my $self = shift;
-
-  my $tmpdir = $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp";
-  $folder_id++;
-
-  $self->{WorkingFile} = "$tmpdir/mbox.$folder_id.$$";
-  $self->{MsgFilePrefix} = "$tmpdir/msg.$folder_id.$$";
-
-  return(1);
-}
 
 =head2 open($folder_name)
 
@@ -107,14 +69,23 @@ sub init {
 
 =item * Call the superclass C<open> method.
 
+=item * Check to see if it is a valid mbox folder.
+
+=item * Mark it as readonly if the folder is not writable.
+
 =item * Lock the folder.
 
-=item * Copy the folder to a temporary location as a working copy.
+=item * Split the folder into individual messages in a temporary
+working directory.
 
 =item * Unlock the folder.
 
-=item * For every message in the folder, add the message_number to the
-object's list of messages.
+=item * Cache all the headers.
+
+=item * Update the appropriate labels with information in the
+C<Status> fields.
+
+=item * Set C<current_message> to C<1>.
 
 =back
 
@@ -123,116 +94,65 @@ object's list of messages.
 sub open {
   my $self = shift;
   my $foldername = shift;
+  
+  return 0 unless $self->SUPER::open($foldername);
+  
+  is_valid_folder_format($foldername)
+    or croak "$foldername isn't an mbox folder";
 
-  my $message_number = 0;
-  my $file_pos = 0;
-  local(*FILE);
-
-  return(0) unless $self->SUPER::open($foldername);
-
-  valid_mbox($foldername) || croak("$foldername isn't an mbox file\n");
-
-  $self->set_readonly if (! -w $foldername);
-
-  lock_folder($foldername) || return(0);
-
-  if (!copy($foldername, $self->{WorkingFile})) {
-    unlock_folder($foldername);
-    croak("can't create $self->{WorkingFile}: $!\n");
+  if (($< == 0) || ($> == 0)) {	# if we're root we have to check it by hand
+    $self->set_readonly unless ((stat($foldername))[2] & 0200);
+  } else {
+    $self->set_readonly unless (-w $foldername);
   }
+  $self->set_readonly unless (-w $foldername);
+  
+  $self->_lock_folder or return 0;
 
-  if (!unlock_folder($foldername)) {
-    unlink($self->{WorkingFile});
-    return(0);
+  my $fh = new IO::File $foldername or croak "can't open $foldername: $!";
+  $fh->seek(0, 2);
+  $self->{MBOX_OldSeekPos} = $fh->tell;
+  $fh->close;
+
+  my $qty_new_messages = $self->_absorb_mbox($foldername, 0);
+  unless ($self->_unlock_folder) {
+    $self->_clean_working_dir;
+    return 0;
   }
-
-  $self->remember_mbox_points($self->{WorkingFile}, 0);
-
-  $self->sort_message_list;
   $self->current_message(1);
-
-  return(1);
-}
-
-sub valid_mbox {
-  my $filename = shift;
-  local(*FILE);
-
-  return(1) if (-z $filename);
-  open(FILE, $filename) || croak("can't open $filename: $!\n");
-  $_ = <FILE>;
-  close(FILE);
-  return(/^From /);
-}
-
-sub remember_mbox_points {
-  my $self = shift;
-  my $filename = shift;
-  my $first_message_number = shift;
-
-  my $message_number = $first_message_number;
-  my $seek_pos = 0;
-  my $file_pos = 0;
-  my $last_was_blank = 0;
-
-  $seek_pos = $self->{Messages}{$message_number}{MboxFilePos}[1]
-    if ($message_number);
-
-  open(FILE, $filename) || croak("can't open $filename: $!\n");
-  seek(FILE, $seek_pos, 0) ||
-    croak("can't seek to $seek_pos in $filename: $!\n");
-  while (<FILE>) {
-    if (/^From /) {
-      $message_number++;
-      $self->remember_message($message_number);
-      $self->{Messages}{$message_number}{MboxFilePos} = [$file_pos, 0];
-      if ($message_number > 1) {
-	$message_number--;
-	$self->{Messages}{$message_number}{MboxFilePos}[1] =
-	  $file_pos - ($last_was_blank ? 2 : 1);
-	$message_number++;
-      }
-    }
-    $file_pos = tell(FILE);
-    $last_was_blank = /^$/ ? 1 : 0;
-  }
-  if ($message_number) {
-    $self->{Messages}{$message_number}{MboxFilePos}[1] =
-      $file_pos - ($last_was_blank ? 2 : 1);
-  }
-  close(FILE);
-
-  return($message_number - $first_message_number);
+  
+  return $qty_new_messages;
 }
 
 =head2 close
 
-Deletes the working copy of the folder and calls the superclass
-C<close> method.
+Deletes the internal working copy of the folder and calls the
+superclass C<close> method.
 
 =cut
 
 sub close {
   my $self = shift;
 
-  unlink($self->{WorkingFile});
-  return($self->SUPER::close);
+  $self->_clean_working_dir;
+  return $self->SUPER::close;
 }
 
 =head2 sync
 
 =over 2
 
-=item * Call the superclass C<sync> method
+=item * Call the superclass C<sync> method.
 
-=item * Lock the folder
+=item * Lock the folder.
 
-=item * Append new messages to the working copy that have been
-appended to the folder since the last time the folder was either
-C<open>ed or C<sync>ed.
+=item * Extract into the temporary working directory any new messages
+that have been appended to the folder since the last time the folder
+was either C<open>ed or C<sync>ed.
 
 =item * Create a new copy of the folder and populate it with the
-messages in the working copy that aren't flagged for deletion.
+messages in the working copy that are not flagged for deletion and
+update the C<Status> fields appropriately.
 
 =item * Move the original folder to a temp location
 
@@ -251,129 +171,151 @@ sub sync {
 
   my $last_message_number;
   my $qty_new_messages = 0;
-  my $i = 0;
   my @statary;
   my $folder = $self->foldername;
   my $tmpfolder = "$folder.$$";
-  my $file_pos;
+  my $infh;
+  my $outfh;
 
-  local(*INFILE);
-  local(*OUTFILE);
-
-  return(-1) if ($self->SUPER::sync == -1);
-
-  open(OUTFILE, ">>$self->{WorkingFile}") ||
-    croak("can't append to $self->{WorkingFile}: $!\n");
-
-  chmod(0600, $self->{WorkingFile}) ||
-    croak("can't chmod $self->{WorkingFile}: $!\n");
+  return -1 if ($self->SUPER::sync == -1);
 
   $last_message_number = $self->last_message;
 
-  return(-1) if (!lock_folder($folder));
+  return -1 unless ($self->_lock_folder);
 
-  $qty_new_messages = $self->remember_mbox_points($folder,
-						  $last_message_number);
-
-  if (!open(INFILE, $folder)) {
-    unlock_folder($folder);
-    croak("can't open $folder: $!\n");
+  unless ($infh = new IO::File($folder)) {
+    $self->_unlock_folder;
+    croak "can't open $folder: $!";
   }
+  $infh->close;
 
-  $file_pos = tell(OUTFILE);
-  seek(INFILE, $file_pos, 0) ||
-    croak("can't seek to $file_pos in $folder: $!\n");
-  while (<INFILE>) {
-    print(OUTFILE $_);
-  }
+  $qty_new_messages = $self->_absorb_mbox($folder, $self->{MBOX_OldSeekPos});
 
-  close(OUTFILE);
-  $self->sort_message_list;
-
-  # Create a new copy of the folder and populate it with the messages
-  # in the working copy that aren't flagged for deletion.
-
-  if (!$self->is_readonly) {
-    if (!open(OUTFILE, ">$tmpfolder")) {
-      unlock_folder($folder);
-      croak("can't create $tmpfolder: $!\n");
+  unless ($self->is_readonly) {
+    # we need to diddle current_message if it's pointing to a deleted msg
+    my $msg = $self->current_message;
+    while ($msg >= $self->first_message) {
+      last if (!$self->label_exists($msg, 'deleted'));
+      $msg = $self->prev_message($msg);
     }
-    if (!open(INFILE, $self->{WorkingFile})) {
-      unlock_folder($folder);
-      croak("can't open $self->{WorkingFile}: $!\n");
+    $self->current_message($msg);
+
+    for my $msg ($self->select_label('deleted')) {
+      unlink("$self->{MBOX_WorkingDir}/$msg");
+      $self->forget_message($msg);
     }
-    @statary = stat(INFILE);
-    if (!chmod(($statary[2] & 0777), $tmpfolder)) {
+    $self->clear_label('deleted');
+
+    unless (@statary = stat($folder)) {
+      $self->_unlock_folder;
+      croak "can't stat $folder: $!";
+    }
+
+    unless ($outfh = new IO::File $tmpfolder, O_CREAT|O_WRONLY, 0600) {
+      $self->_unlock_folder;
+      croak "can't create $tmpfolder: $!";
+    }
+
+    # match the permissions of the original folder
+    unless (chmod(($statary[2] & 0777), $tmpfolder)) {
       unlink($tmpfolder);
-      croak("can't chmod $tmpfolder: $!\n");
+      croak "can't chmod $tmpfolder: $!";
     }
-    
-    $i = 0;
-    while (<INFILE>) {
-      $i++ if (/^From /);
-      print(OUTFILE $_) if (!$self->label_exists($i, 'delete'));
+
+    for my $msg (sort { $a <=> $b } $self->message_list) {
+      my $message = $self->get_message($msg);
+      my $header = $self->get_header($msg);
+
+      unless ($self->get_option('NotMUA')) {
+	my $status = 'O';
+	$status = 'RO' if $self->label_exists($msg, 'seen');
+	$header->replace('Status', $status, -1);
+      }
+      
+      my $from = $header->get('Mail-From') || $header->get('From ');
+      
+      # we dup it cuz we're going to modify it
+      my $dup_header = $header->dup();
+      $dup_header->delete('Mail-From') if ($dup_header->count('Mail-From'));
+      
+      $outfh->print("From $from");
+      $dup_header->print($outfh);
+      $outfh->print("\n");
+      $message->print_body($outfh);
+      $outfh->print("\n");
     }
-    close(INFILE);
-    close(OUTFILE);
-    map {$self->forget_message($_)} $self->select_label('delete');
-    $self->clear_label('delete');
-    $self->sort_message_list;
-    
+    $outfh->close;
+
     # Move the original folder to a temp location
-    
-    if (!rename($folder, "$folder.old")) {
-      unlock_folder($folder);
-      croak("can't move $folder out of the way: $!\n");
+
+    unless (rename($folder, "$folder.old")) {
+      $self->_unlock_folder;
+      croak "can't move $folder out of the way: $!";
     }
     
     # Move the new folder into place
     
-    if (!rename($tmpfolder, $folder)) {
-      unlock_folder($folder);
-      croak("gack! can't rename $folder.old to $folder: $!\n")
-	if (!rename("$folder.old", $folder));
-      croak("can't move $folder to $folder.old: $!\n");
+    unless (rename($tmpfolder, $folder)) {
+      $self->_unlock_folder;
+      croak "gack! can't rename $folder.old to $folder: $!"
+	unless (rename("$folder.old", $folder));
+      croak "can't move $folder to $folder.old: $!";
     }
     
     # Delete the old original folder
     
-    if (!unlink("$folder.old")) {
-      unlock_folder($folder);
-      croak("can't unlink $folder.old: $!\n");
+    unless (unlink("$folder.old")) {
+      $self->_unlock_folder;
+      croak "can't unlink $folder.old: $!";
     }
   }
 
-  unlock_folder($folder);
+  $self->_unlock_folder;
 
-  return($qty_new_messages);
+  return $qty_new_messages;
 }
 
 =head2 pack
 
-Calls the superclass C<pack> method.  This is essentially a no-op
-since mbox folders don't need to be packed.
+Calls the superclass C<pack> method.
+
+Renames the message list to that there are no gaps in the numbering
+sequence.
+
+It also tweaks the current_message accordingly.
 
 =cut
 
-sub pack { return($_[0]->SUPER::pack); }
+sub pack {
+  my $self = shift;
 
-=head2 get_message($msg_number)
+  my $newmsg = 0;
+  my $current_message = $self->current_message;
 
-=over 2
+  return 0 if (!$self->SUPER::pack);
 
-=item * Call the superclass C<get_message> method.
+  for my $msg (sort { $a <=> $b } $self->message_list) {
+    $newmsg++;
+    if ($msg > $newmsg) {
+      $self->current_message($newmsg) if ($msg == $current_message);
+      $self->remember_message($newmsg);
+      $self->cache_header($newmsg, $self->{Messages}{$msg}{Header});
+      $self->forget_message($msg);
+    }
+  }
 
-=item * Create a temporary file with the contents of the given mail
-message.
+  return 1;
+}
 
-=item * Absorb the temporary file into a B<Mail::Internet> object
-reference.
+=item get_message ($msg_number)
 
-=item * Delete the temporary file.
+Calls the superclass C<get_message> method.
 
-=item * Return the B<Mail::Internet> object reference.
+Retrieves the given mail message file into a B<Mail::Internet> object
+reference, sets the 'C<seen>' label, and returns the reference.
 
-=back
+If the 'Content-Length' option is not set, then C<get_message> will
+unescape 'From ' lines in the body of the message.
 
 =cut
 
@@ -381,25 +323,44 @@ sub get_message {
   my $self = shift;
   my $key = shift;
 
-  my $file;
-  my $message;
-  local(*FILE);
+  return undef unless $self->SUPER::get_message($key);
 
-  return(undef) unless $self->SUPER::get_message($key);
+  my $file = "$self->{MBOX_WorkingDir}/$key";
 
-  return(undef) if (!defined($self->{Messages}{$key}));
+  my $fh = new IO::File $file or croak "whoa! can't open $file: $!";
+  my $message = new Mail::Internet($fh,
+				   Modify => 0,
+				   MailFrom => 'COERCE');
+  $message->unescape_from unless $self->get_option('Content-Length');
+  $fh->close;
 
-  $file = $self->extract_message($key, 1);
+  my $header = $message->head;
+  $self->cache_header($key, $header);
 
-  if (!open(FILE, $file)) {
-    unlink($file);
-    croak("whoa! can't open $file: $!\n");
-  }
-  $message = new Mail::Internet(<FILE>);
-  close(FILE);
-  unlink($file);
+  $self->add_label($key, 'seen');
 
-  return($message);
+  return $message;
+}
+
+=item get_message_file ($msg_number)
+
+Calls the superclass C<get_message_file> method.
+
+Retrieves the given mail message file and returns the name of the file.
+
+Returns C<undef> on failure.
+
+This method does NOT currently do any 'From ' unescaping.
+
+=cut
+
+sub get_message_file {
+  my $self = shift;
+  my $key = shift;
+
+  return undef unless $self->SUPER::get_message($key);
+
+  return "$self->{MBOX_WorkingDir}/$key";
 }
 
 =head2 get_header($msg_number)
@@ -420,182 +381,182 @@ sub get_header {
   my $self = shift;
   my $key = shift;
 
-  my $file;
-  my $header;
-  local(*FILE);
+  return undef unless ($self->SUPER::get_header($key));
 
-  return(undef) if (!$self->SUPER::get_header($key) ||
-		    !defined($self->{Messages}{$key}));
+  return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
 
-  return($self->{Messages}{$key}{Header}) if ($self->{Messages}{$key}{Header});
-  
-  $file = $self->extract_message($key, 0);
+  my $file = "$self->{MBOX_WorkingDir}/$key";
 
-  if (!open(FILE, $file)) {
-    unlink($file);
-    croak("can't open $file: $!\n");
-  }
-  $header = new Mail::Internet;
-  $header->read_header(\*FILE);
-  close(FILE);
-  unlink($file);
+  my $fh = new IO::File $file or croak "can't open $file: $!";
+  my $header = new Mail::Header($fh,
+				Modify => 0,
+				MailFrom => 'COERCE');
+  $fh->close;
+
   $self->cache_header($key, $header);
 
-  return($header);
+  return $header;
 }
 
-=head2 append_message($message_ref)
+=head2 append_message($mref)
 
 =over 2
 
-=item * Call the superclass C<append_message> method.
+Calls the superclass C<append_message> method.
 
-=item * Lock the folder.
+Creates a new mail message file, in the temporary working directory,
+with the contents of the mail message contained in C<$mref>.
+It will synthesize a 'From ' line if one is not present in
+C<$mref>.
 
-=item * If a 'From ' line isn't present in C<$message_ref> then
-synthesize one.
-
-=item * Append the contents of C<$message_ref> to the folder.
-
-=item * Adds a record of the new message in the internal data
-structures of C<$self>.
-
-=item * Unlock the folder.
-
-=back
+If the 'Content-Length' option is not set, then C<get_message> will
+escape 'From ' lines in the body of the message.
 
 =cut
 
 sub append_message {
   my $self = shift;
-  my $message_ref = shift;
-
-  my $file_pos;
-  my $end_file_pos;
+  my $mref = shift;
+  
   my $message_number = $self->last_message;
-  my $body;
-  local(*FILE);
+  
+  my $dup_mref = $mref->dup;
 
-  return(0) unless $self->SUPER::append_message($message_ref);
+  return 0 unless $self->SUPER::append_message($dup_mref);
 
-  $body = $message_ref->body;
-  open(FILE, ">>$self->{WorkingFile}") ||
-    croak("can't append to $self->{WorkingFile}: $!\n");
-  $file_pos = tell(FILE);
-  print(FILE synth_envelope($message_ref), "\n")
-    if (!$message_ref->get('From '));
-  $message_ref->print(\*FILE);
-  # actually, maybe we should always append a blank line
-  print(FILE "\n") if ($body->[$#{$body}] ne "\n");
-  $end_file_pos = tell(FILE);
-  close(FILE);
-
+  my $dup_header = $mref->head->dup;
+  $dup_mref->escape_from unless $self->get_option('Content-Length');
+  
   $message_number++;
+  my $fh = new IO::File("$self->{MBOX_WorkingDir}/$message_number",
+			O_CREAT|O_WRONLY, 0600)
+    or croak "can't create $self->{MBOX_WorkingDir}/$message_number: $!";
+  _coerce_header($dup_header);
+  $dup_header->print($fh);
+  $fh->print("\n");
+  $dup_mref->print_body($fh);
+  $fh->close;
+
   $self->remember_message($message_number);
-  $self->{Messages}{$message_number}{MboxFilePos} = [$file_pos, 0];
-  $self->{Messages}{$message_number}{MboxFilePos}[1] =
-    $end_file_pos - (($message_ref->body->[$#{$message_ref->body}] eq "\n") ?
-		     2 : 1);
-  $self->sort_message_list;
-
-  return(1);
+  
+  return 1;
 }
 
-# Mbox files must have a 'From ' line at the beginning of each
-# message.  This routine will synthesize one from the 'From:' and
-# 'Date:' fields.  Original solution and code of the following
-# subroutine provided by Andreas Koenig
+=head2 update_message($msg_number, $mref)
 
-sub synth_envelope {
-  my $message_ref = shift;
-  my @addrs;
-  my $from;
-  my $date;
+Calls the superclass C<update_message> method.
 
-  @addrs = Mail::Address->parse($message_ref->get('From'));
-  $from = $addrs[0]->address();
-  $date = ctime(str2time($message_ref->get("date")));
-  chomp($date);
+Replaces the message pointed to by C<$msg_number> with the contents of
+the C<Mail::Internet> object reference C<$mref>.
 
-  return("From $from  $date");
-}
+It will synthesize a 'From ' line if one is not present in
+$mref.
 
-=head2 update_message($msg_number, $message_ref)
-
-=over 2
-
-=item * Call the superclass C<update_message> method.
-
-=item * Writes a new copy of the working folder file replacing the
-given message with the contents of the given B<Mail::Internet> message
-reference.  It will synthesize a 'From ' line if one isn't present in
-$message_ref.
-
-
-=back
+If the 'Content-Length' option is not set, then C<get_message> will
+escape 'From ' lines in the body of the message.
 
 =cut
 
 sub update_message {
   my $self = shift;
   my $key = shift;
-  my $message_ref = shift;
-
+  my $mref = shift;
+  
   my $file_pos = 0;
-  my $i = 1;
-  local(*WORKFILE);
-  local(*NEWWORKFILE);
+  my $filename = "$self->{MBOX_WorkingDir}/$key";
+  
+  my $dup_mref = $mref->dup;
+  my $dup_header = $dup_mref->head->dup;
 
-  return(0) unless $self->SUPER::update_message($key, $message_ref);
+  return 0 unless $self->SUPER::update_message($key, $dup_mref);
 
-  open(WORKFILE, $self->{WorkingFile}) ||
-    croak("can't open $self->{WorkingFile}: $!\n");
-  open(NEWWORKFILE, ">$self->{WorkingFile}N") ||
-    croak("can't create $self->{WorkingFile}N: $!\n");
-  chmod(0600, "$self->{WorkingFile}N") ||
-    croak("can't chmod $self->{WorkingFile}N: $!\n");
-  while (<WORKFILE>) {
-    if (/^From /) {
-      if ($i == $key) {
-	print(NEWWORKFILE synth_envelope($message_ref), "\n")
-	  if (!$message_ref->get('From '));
-	$message_ref->print(\*NEWWORKFILE);
-      }
-      $i++;
-    }
-    print(NEWWORKFILE $_) if ($i != $key);
-  }
-  close(NEWWORKFILE);
-  close(WORKFILE);
-  $self->remember_mbox_points("$self->{WorkingFile}N", 0);
+  $dup_mref->escape_from unless $self->get_option('Content-Length');
 
-  rename($self->{WorkingFile}, "$self->{WorkingFile}O") ||
-    croak("can't rename $self->{WorkingFile}: $!\n");
-  rename("$self->{WorkingFile}N", $self->{WorkingFile}) ||
-    croak("can't rename $self->{WorkingFile}N");
-  unlink("$self->{WorkingFile}O");
+  my $fh = new IO::File "$filename.new", O_CREAT|O_WRONLY, 0600
+    or croak "can't create $filename.new: $!";
+  _coerce_header($dup_header);
+  $dup_header->print($fh);
+  $fh->print("\n");
+  $dup_mref->print_body($fh);
+  $fh->close;
 
-  return(1);
+  rename("$filename.new", $filename) or
+    croak "can't rename $filename.new to $filename: $!";
+  
+  return 1;
+}
+
+=head2 init
+
+Initializes various items specific to B<Mbox>.
+
+=over 2
+
+=item * Determines an appropriate temporary directory.  If the
+C<TMPDIR> environment variable is set, it uses that, otherwise it uses
+C</tmp>.  The working directory will be a subdirectory in that
+directory.
+
+=item * Bumps a sequence number used for unique temporary filenames.
+
+=item * Initializes C<$self-E<gt>{WorkingDir}> to the name of a
+directory that will be used to hold the working copies of the messages
+in the folder.
+
+=back
+
+=cut
+
+sub init {
+  my $self = shift;
+
+  my $tmpdir = $ENV{TMPDIR} ? $ENV{TMPDIR} : "/tmp";
+
+  $folder_id++;
+  $self->{MBOX_WorkingDir} = "$tmpdir/mbox.$folder_id.$$";
+
+  return 1;
+}
+
+=head2 is_valid_folder_format($foldername)
+
+Returns C<1> is the folder is a plain file and starts with the string
+'C<From >'.
+
+There is one small sniggle here.  If the folder is a file and is zero
+size, it returns C<1>.  This may or may not cause problems with other
+folder formats that are based on a large flat file.
+
+=cut
+
+sub is_valid_folder_format {
+  my $foldername = shift;
+  
+  return 0 unless (-f $foldername);
+  return 1 if (-z $foldername); # yuck...
+
+  my $fh = new IO::File $foldername or return 0;
+  my $line = <$fh>;
+  $fh->close;
+  return($line =~ /^From /);
 }
 
 =head2 create($foldername)
 
 Creates a new folder named C<$foldername>.  Returns C<0> if the folder
-already exists, otherwise returns of the folder creation was
-successful.
+already exists, otherwise returns C<1>.
 
 =cut
 
 sub create {
   my $self = shift;
   my $foldername = shift;
-  local(*FILE);
 
-  return(0) if (-e $foldername);
-  open(FILE, ">$foldername") || croak("can't create $foldername: $!\n");
-  close(FILE);
-  chmod(0600, $foldername) || croak("can't chmod $foldername: $!\n");
-  return(1);
+  return 0 if (-e $foldername);
+  my $fh = new IO::File $foldername, O_CREAT|O_WRONLY, 0600
+    or croak "can't create $foldername: $!";
+  $fh->close;
+  return 1;
 }
 ###############################################################################
 sub DESTROY {
@@ -603,78 +564,164 @@ sub DESTROY {
 
   # all of these are just in case...
   # the appropriate methods should have removed them already...
-  unlock_folder($self->foldername);
-  unlink($self->{WorkingFile},
-	 "$self->{WorkingFile}N",
-	 "$self->{WorkingFile}O",
-	 glob("$self->{MsgFilePrefix}.*"));
-}
-
-sub lock_folder {
-  my $folder = shift;
-
-  my $i = 3;
-  local(*FILE);
-
-  return(lock($folder));
-  if (0) {
-    while ($i--) {
-      if (! -e "$folder.lock") {
-	open(FILE, ">$folder.lock") ||
-	  croak("can't create $folder.lock: $!\n");
-	close(FILE);
-	return(1);
-      }
-      sleep(3);
-    }
-    return(0);
+  if ($self->{Creator} == $$) {
+    $self->_unlock_folder;
+    $self->_clean_working_dir;
   }
 }
-
-sub unlock_folder {
-  return(unlock($_[0]));
-  if (0) {
-    return((-e "$_[0].lock") ? unlink("$_[0].lock") : 1);
-  }
-}
-
-sub extract_message {
+###############################################################################
+sub _absorb_mbox {
   my $self = shift;
-  my $key = shift;
-  my $full_message = shift;
+  my $folder = shift;
+  my $seek_pos = shift;
 
-  my $msg_file = "$self->{MsgFilePrefix}.$key";
-  my $next_msg = $self->next_message($key);
-  my $goal_pos =
-    ($next_msg) ? $self->{Messages}{$next_msg}{MboxFilePos}->[0] : 0;
+  my $qty_new_messages = 0;
+  my $last_was_blank = 0;
+  my $is_blank = 0;
+  my $last_message_number = $self->last_message;
+  my $new_message_number = $last_message_number;
+  my $outfile_is_open = 0;
+  my $outfh;
 
-  local(*FOLDER);
-  local(*FILE);
-
-  open(FOLDER, $self->{WorkingFile}) ||
-    croak("can't open $self->{WorkingFile}: $!\n");
-  open(FILE, ">$msg_file") || croak("can't create $msg_file: $!\n");
-  chmod(0600, $msg_file) || croak("can't chmod $msg_file: $!\n");
-  seek(FOLDER, $self->{Messages}{$key}{MboxFilePos}->[0], 0) ||
-    croak("can't seek to $self->{Messages}{$key}{MboxFilePos}->[0] in $self->{WorkingFile}: $!\n");
-  while (<FOLDER>) {
-    last if ($goal_pos && (tell(FOLDER) >= $goal_pos));
-    last if (!$full_message && /^$/);
-    print(FILE $_);
+  if (! -e $self->{MBOX_WorkingDir}) {
+    mkdir($self->{MBOX_WorkingDir}, 0700)
+      or croak "can't create $self->{MBOX_WorkingDir}: $!";
+  } elsif (! -d $self->{MBOX_WorkingDir}) {
+    croak "$self->{MBOX_WorkingDir} isn't a directory!";
   }
-  close(FILE);
-  close(FOLDER);
 
-  return($msg_file);
+  my $infh = new IO::File $folder or croak "can't open $folder: $!";
+  $infh->seek($seek_pos, 0)
+    or croak "can't seek to $seek_pos in $folder: $!";
+  while (<$infh>) {
+    $is_blank = /^$/ ? 1 : 0;
+    if (/^From /) {
+      $outfh->close if ($outfile_is_open);
+      $outfile_is_open = 0;
+      $new_message_number++;
+      $qty_new_messages++;
+      $self->remember_message($new_message_number);
+      $outfh = new IO::File("$self->{MBOX_WorkingDir}/$new_message_number",
+			    O_CREAT|O_WRONLY, 0600)
+	or croak "can't create $self->{MBOX_WorkingDir}/$new_message_number: $!";
+      $outfile_is_open++;
+    } else {
+      $outfh->print("\n") if ($last_was_blank);
+    }
+    $last_was_blank = $is_blank ? 1 : 0;
+    $outfh->print($_) if !$is_blank;
+  }
+  $outfh->close if ($outfile_is_open);
+  $self->{MBOX_OldSeekPos} = $infh->tell;
+  $infh->close;
+
+  for my $msg (($last_message_number + 1) .. $self->last_message) {
+    my $header = $self->get_header($msg);
+    my $status = $header->get('Status') or next;
+    $self->add_label($msg, 'seen') if ($status =~ /R/);
+  }
+
+  return $qty_new_messages;
+}
+
+# Mbox files must have a 'From ' line at the beginning of each
+# message.  This routine will synthesize one from the 'From:' and
+# 'Date:' fields.  Original solution and code of the following
+# subroutine provided by Andreas Koenig
+
+# Since Mail::Header could have been told to coerce the 'From ' into a
+# Mail-From field, we look for both, and neither is found then
+# synthesize one.  In either case, a 'From ' string is returned.
+
+sub _coerce_header {
+  my $header = shift;
+  my $from = '';
+  my $date = '';
+  
+  my $mailfrom = $header->get('From ') || $header->get('Mail-From');
+  
+  unless ($mailfrom) {
+    if ($from =
+	$header->get('Reply-To') ||
+	$header->get('From') ||
+	$header->get('Sender') ||
+	$header->get('Return-Path')) { # this is dubious
+      my @addrs = Mail::Address->parse($from);
+      $from = $addrs[0]->address();
+    } else {
+      $from = 'NOFROM';
+    }
+    
+    if ($date = $header->get('Date')) {
+      chomp($date);
+      $date = gmtime(str2time($date));
+    } else {
+      # There was no date field. Let's just stuff today's date in there
+      # for lack of a better value. I think it should be gmtime - someone
+      # correct me if this is wrong.
+      $date = gmtime;
+    }
+    chomp($date);
+    $mailfrom = "$from $date\n";
+  }
+  
+  $header->delete('From ');
+  $header->delete('Mail-From');
+  
+  $header->mail_from('KEEP');
+  $header->add('From ', $mailfrom, 0);
+  $header->mail_from('COERCE');
+  
+  return $header;
+}
+
+sub _clean_working_dir {
+  my $self = shift;
+  unlink(glob("$self->{MBOX_WorkingDir}/*"));
+  rmdir($self->{MBOX_WorkingDir});
+}
+
+sub _lock_folder {
+  my $self = shift;
+  my $folder = $self->foldername;
+
+  my $timeout = $self->get_option('Timeout');
+  $timeout ||= 10;
+  my $sleep = 1.0;		# maybe this should be configurable
+
+  if ($self->get_option('DotLock')) {
+    for my $num (1 .. int($timeout / $sleep)) {
+      unless (-e "$folder.lock") {
+	my $fh = new IO::File "$folder.lock", O_CREAT|O_WRONLY, 0600
+	  or croak "can't create $folder.lock: $!";
+	$fh->close;
+	return 1;
+      }
+      select(undef, undef, undef, $sleep);
+    }
+    return 0;
+  }
+
+  return lock($folder);
+}
+
+sub _unlock_folder {
+  my $self = shift;
+  my $folder = $self->foldername;
+
+  return((-e "$folder.lock") ? unlink("$folder.lock") : 1)
+    if ($self->get_option('DotLock'));
+
+  return unlock($folder);
 }
 
 =head1 AUTHOR
 
-Kevin Johnson E<lt>F<kjj@primenet.com>E<gt>
+Kevin Johnson E<lt>F<kjj@pobox.com>E<gt>
 
 =head1 COPYRIGHT
 
-Copyright (c) 1996 Kevin Johnson <kjj@primenet.com>.
+Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>.
 
 All rights reserved. This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

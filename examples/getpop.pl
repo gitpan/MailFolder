@@ -1,33 +1,40 @@
-#!/usr/bin/perl -I/home/kjj/perldevel/Folder/blib/lib
+#!/usr/bin/perl
 
 use Net::POP3;
 use Mail::Folder::Mbox;
 
-$server = 'mailhost';
-$mailbox = 'mailbox';
-$user = 'YOUR_POP_ACCOUNT_NAME';
-$pass = 'YOUR_POP_ACCOUNT_PASSWORD';
+my $server = 'mailhost';
+my $mailbox = 'mailbox';
+my $user = 'YOUR_POP_ACCOUNT_NAME';
+my $pass = 'YOUR_POP_ACCOUNT_PASSWORD';
+
+my @deletes;
 
 autoflush STDOUT 1;
 
-$folder = Mail::Folder->new('mbox', $mailbox, Create => 1);
+print "opening $mailbox\n";
+my $folder = Mail::Folder->new('mbox', $mailbox, Create => 1)
+  or die "can't create local mailfolder object: $!";
 
-($pop = Net::POP3->new($server, Debug => 0)) ||
-  die("can't connect to $server\n");
+print("connecting to $server\n");
+my $pop = Net::POP3->new($server, Debug => 0)
+  or die "can't connect to $server\n";
 
-$qtymsgs = $pop->login($user, $pass);
+print "logging in\n";
+my $qtymsgs = $pop->login($user, $pass);
 
 if (defined($qtymsgs)) {
   if ($qtymsgs) {
-    print("$qtymsgs messages: ");
-    foreach $msgnum (1 .. $qtymsgs) {
-      if ($msg = $pop->get($msgnum)) {
-	print('.');
-	$mref = Mail::Internet->new($msg);
+    print "retrieving $qtymsgs message", ($qtymsgs > 1)?'s':'', ": ";
+    for my $msgnum (1 .. $qtymsgs) {
+      if (my $msg = $pop->get($msgnum)) {
+	print '.';
+	pop(@{$msg}) if ($msg->[$#{$msg}] eq "\n");
+	my $mref = Mail::Internet->new($msg);
 	$folder->append_message($mref);
 	push(@deletes, $msgnum);
       } else {
-	print('x');
+	print 'x';
       }
     }
     print("\n");
@@ -37,5 +44,8 @@ if (defined($qtymsgs)) {
 
 $folder->close;
 
+print "deleting messages on $server\n" if (@deletes);
 map { $pop->delete($_) } @deletes;
+
+print "disconnecting\n";
 $pop->quit;

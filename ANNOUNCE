@@ -1,37 +1,39 @@
-The newest version (0.3) of the Mail::Folder module has been posted to
+The newest version (0.05) of the Mail::Folder module has been posted to
 CPAN under my author id (KJOHNSON) and name (Kevin_Johnson).
 
-This module provides a perl module interface to email folders that is
+Mail::Folder provides a perl module interface to email folders that is
 independent from the physical folders.  The actual work on folders is
 done with folder interface modules lying 'beneath' the Mail::Folder
 interface.
 
-Refer to the provided README file for additional information.
-
-This code is still in alpha release.  Think twice about using it to
+The module is in still alpha release.  Think twice about using it to
 modify folders that you consider important (at the very least make
-backup copies :-).  Also, the interface is currently in an evaluation
-phase.  The interface will probably change in non-backwards-compatible
-ways.
+backup copies :-).  That being said, I'll mention that I use it as the
+sole interface to my email at home.
 
-I am keenly interested in feedback from folks doing stuff with the
-package.
+The method interface is currently in an evaluation phase.  Before it
+goes to beta, I expect to make method interfaces changes that won't be
+backwards compatible.
+
+The current version has been tested against 5.003_24 or newer.
 
 Here are some of the more notable new features and unmalfeatures added
 since the last release:
-	+ Message labels (or named sequences in MH parlance).
-	+ register_folder_interface is performed implicitly now.
-	+ Added a mechanism for dealing with readonly folders.
-	+ Mbox synthesizes the 'From ' line if necessary.
-	+ Mbox uses flock now (oops, I'm an old sysVoid).
-	  (eventually the locking in mbox will be configurable)
-	+ Added a getpop.pl example script.
-	+ Added a from.pl example script.
-	+ Various bug fixes and optimizations.
+	+ Big improvements in the maildir (ala qmail) folder interface.
+	  Sorry, the first whack at it was a botch.
+	+ Added get_mime_header and get_mime_message methods.
+	+ The beginnings of an NNTP folder interface.
+	+ An MUA based on pTk in the examples directory.
+	+ Various bug fixes, cleanups, and optimizations.
 
-Please report any bugs/suggestions to <kjj@primenet.com>.
+Refer to the provided README file for additional information.
 
-Copyright (c) 1996 Kevin Johnson <kjj@primenet.com>
+I am keenly interested in feedback from folks doing interesting stuff
+with the package.
+
+Please report any bugs/suggestions to <kjj@pobox.com>.
+
+Copyright (c) 1996-1997 Kevin Johnson <kjj@pobox.com>
 
 All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.
