@@ -1,0 +1,60 @@
+This is an alpha of a Mail::Folder module package for perl5.
+
+This module provides an interface to email folders that is independent
+from the physical folders.  The actual work on folders is done with
+helper modules lying 'beneath' the Mail::Folder interface.
+
+WARNING! Think twice about using this module in it's current release
+WARNING! on mail folders that you consider important.  At the very
+WARNING! least make sure you have backup copies.
+
+WARNING! This code is in evaluation phase.  The interface will
+WARNING! probably change in non-backwards-compatible ways.
+
+To build and install the package execute the following commands:
+		perl Makefile.PL
+		make			# optional
+		make test		# optional :-)
+		make install
+
+The TODO file has information on features that aren't present yet.  It
+also has some general thoughts on futures.
+
+The MailTools package is used to fling mail messages around as data
+structures, so you'll need it.
+
+I've included a basic helper module (Mail::Folder::Emaul) of my own to
+serve as an example of hooking a folder interface into Mail::Folder.
+Eventually, it will grow into a full-featured folder architecture, but
+for now it's an adequate example.  I have no plans to make it a 100%
+mh interface.  I haven't included any other folder interfaces yet
+because this project started out as an attempt to write a leaner
+alternative to mh for personal use.  I'll probably provide an mbox
+(unix mailbox) folder handler soon.
+
+Check the man-pages for Mail::Folder for information on using the
+package and adding folder interfaces.  The Mail::Folder::Emaul
+man-pages also have some useful information.  This will improve over
+time.
+
+I'm still pondering the details of interfacing to MailTools and
+MIME-parser.  Expect changes here.
+
+It is 'highly unlikely' that Mail::Folder will ever be capable of
+abstracting every folder feature of every MUA out there in a truly
+transparent way.  I don't, however, think that this detracts from some
+of it's more interesting potential uses:
+	100% pure perl MUAs
+	perl scripting against mail folders
+		(folder conversions are a snap :-)
+		Larry Virden mentioned how nice a filter class ala
+		mailagent would be.  That would make a nice addition
+		to the suite of mail modules.
+	adding folders to non-email packages
+
+Please report any bugs/suggestions to <kjj@primenet.com>
+
+Copyright (c) 1996 Kevin Johnson <kjj@primenet.com>.
+
+All rights reserved. This program is free software; you can
+redistribute it and/or modify it under the same terms as Perl itself.

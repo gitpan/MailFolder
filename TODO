@@ -1,0 +1,34 @@
++ Methods not implemented yet:
+	threaded sort
+	message status (unread, replied, forwarded, resent, message size)
+	message_summary
+	copy message into another folder
+  Actually, maybe some of the methods should be part of a message
+  class that abstracts messages a little more than what is currently
+  available with Mail::Internet, and Mail::Folder could use that
+  abstraction.  Geez, mail is such a pain... :-)
+
++ Provide methods for accessing $self->{Messages}.
+  The goal is to insulate the folder handlers from all of the internal
+  data structures in Mail::Folder.
+
++ Hook into MIME::Entity.
+  The fact that Mail::Internet and MIME::Entity have different
+  interfaces still needs to dealt with.
+
++ Do some kind of option processing.
+
++ Handle hard errors better.
+
++ Things to add to emaul:
+	folder locking
+	signal handling
+	option for whether it makes backup copies of modified messages
+
++ Issues with MailTools:
+	It currently folds header lines - this will cause changes to a
+		message being written out where it is otherwise
+		unchanged.
+	The get method returns the string with the newline at the end.
+		This isn't a problem, but it can be cumbersome for
+		coders.
