@@ -1,5 +1,7 @@
 #!/usr/bin/perl
 
+require 5.00397;
+use strict;
 use Net::POP3;
 use Mail::Folder::Mbox;
 
@@ -13,7 +15,7 @@ my @deletes;
 autoflush STDOUT 1;
 
 print "opening $mailbox\n";
-my $folder = Mail::Folder->new('mbox', $mailbox, Create => 1)
+my $folder = Mail::Folder->new('mbox', $mailbox, Create => 1, NotMUA => 1)
   or die "can't create local mailfolder object: $!";
 
 print("connecting to $server\n");
@@ -30,7 +32,7 @@ if (defined($qtymsgs)) {
       if (my $msg = $pop->get($msgnum)) {
 	print '.';
 	pop(@{$msg}) if ($msg->[$#{$msg}] eq "\n");
-	my $mref = Mail::Internet->new($msg);
+	my $mref = new Mail::Internet($msg, Modify => 0);
 	$folder->append_message($mref);
 	push(@deletes, $msgnum);
       } else {

@@ -1,5 +1,6 @@
 #!/usr/bin/perl -I../blib/lib
 
+require 5.00397;
 use strict;
 use Mail::Folder::Mbox;
 use Mail::Folder::Maildir;

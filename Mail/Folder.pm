@@ -6,18 +6,18 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Folder.pm,v 1.5 1997/03/18 02:37:38 kjj Exp $
+# $Id: Folder.pm,v 1.6 1997/04/06 21:06:03 kjj Exp $
 
-require 5.003;
+require 5.00397;
 
 package Mail::Folder;
 use strict;
 use Carp;
-use vars qw($VERSION %folder_types);
+use vars qw($VERSION %folder_types $DefaultEmptyFileFormat);
 use MIME::Head;
 use MIME::Parser;
 
-$VERSION = "0.05";
+$VERSION = "0.06";
 
 =head1 NAME
 
@@ -35,7 +35,7 @@ This base class, and companion subclasses provide an object-oriented
 interface to email folders independant of the underlying folder
 implementation.
 
-There are currently three folder interfaces provided with this package:
+The following folder interfaces are provided with this package:
 
 =over 4
 
@@ -56,6 +56,12 @@ Emaul is a folder interfaces of my own design (in the loosest sense of
 the word :-).  It is vaguely similar to MH.  I wrote it to flesh out
 earlier versions of the C<Mail::Folder> package.
 
+=item Mail::Folder::NNTP
+
+The beginnings of an interface to NNTP.  Some of the C<Mail::Folder>
+methods are not implemented yet, and no regression tests have been
+written yet.
+
 =back
 
 Here is a snippet of code that retrieves the third message from a
@@ -73,6 +79,7 @@ mythical emaul folder and outputs it to stdout:
 =cut
 
 %folder_types = ();
+$DefaultEmptyFileFormat = 'mbox';
 
 ###############################################################################
 
@@ -89,7 +96,7 @@ querying each registered foldertype for a match.
 
 Options are specified as hash items using key and value pairs.
 
-There are currently four builtin options:
+The following options are currently builtin:
 
 =over 2
 
@@ -105,9 +112,28 @@ or updated by the C<append_message> and C<update_message> methods.
 =item * DotLock
 
 If set and appropriate for the folder interface, the folder interface
-will use '.lock' style folder locking.  Currently, this is only used
-by the mbox interface.  This mechanism might be replaced with
-something more generalized in the future.
+will use 'C<.lock>' style folder locking.  Currently, this is only
+used by the mbox interface - please refer to the documentation for the
+mbox interface for more information.  This mechanism will probably be
+replaced with something more generalized in the future.
+
+=item * Flock
+
+If set and appropriate for the folder interface, the folder interface
+will use C<flock> style folder locking.  Currently this is only used
+by the mbox interface - please refer to the documentation for the mbox
+interface for more information.  This mechanism will probably be
+replaced with something more generalized in the future.
+
+=item * NFSLock
+
+If set and appropriate for the folder interface, the folder interface
+will take extra measures necessary to deal with folder locking across
+NFS.  These special measure typically consist of constructing lock
+files in a special manner that is more immune to the atomicity
+problems that NFS has when creating a lock file.  Use of this option
+will generally require the ability to use long filenames on the NFS
+server in question.
 
 =item * NotMUA
 
@@ -135,6 +161,12 @@ interfaces that entail local file locking it is used to specify the
 maximum amount of time, in seconds, to wait for a lock to be acquired.
 And for the C<maildir> interface it is, of course, meaningless C<:-)>.
 
+=item * DefaultFolderType
+
+If the C<Create> option is set and C<AUTODETECT> is being used to
+determine folder type, this option will be used to determine what type
+of folder to create.
+
 =back
 
 =cut
@@ -158,9 +190,13 @@ sub new {
   # folder it is.
   if ($type eq 'AUTODETECT') {
     defined($folder)
-      or croak("can't AUTODETECT without providing foldername: $!\n");
-    $type = _detect_folder_type($folder)
-      or croak("can't AUTODETECT foldertype for $folder\n")
+      or croak("can't AUTODETECT without being provided a foldername: $!\n");
+    $type = detect_folder_type($folder);
+    if (defined($options{Create}) && $options{Create}
+	&& defined($options{DefaultFolderType})) {
+      $type ||= $options{DefaultFolderType}
+    }
+    croak("can't AUTODETECT foldertype for $folder\n") unless defined($type);
   }
   
   ($concrete = $folder_types{$type}) or return undef;
@@ -212,14 +248,14 @@ determines that the folder is readonly.
 
 Please note that I have not done any testing for using this module
 against system folders.  I am a strong advocate of using a filter
-package or using a mail delivery agent that migrates the incoming
-email to the home directory of the user.  If you try to use
-C<MailFolder> against a system folder, you deserve what you get.
-Consider yourself warned.  I have no intention, at this point in time,
-to deal with system folders and any possible sgid-mail issues.  If you
-work on it, and get it working, let me know.
+package or mail delivery agent that migrates the incoming email to the
+home directory of the user.  If you try to use C<MailFolder> against a
+system folder, you deserve what you get.  Consider yourself warned.  I
+have no intention, at this point in time, to deal with system folders
+and the related issues.  If you work on it, and get it working in a
+portable manner, let me know.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -251,7 +287,7 @@ does not perform an implicit C<sync>.  Make sure you do a C<sync>
 before the C<close> if you want the pending deletes, appends, updates,
 and the like to be performed on the folder.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -279,7 +315,7 @@ interface will process deletes, updates, appends, refiles, and dups.
 It also reads in any new messages that have arrived in the folder
 since the last time it was either C<open>ed or C<sync>ed.
 
-The folder interface is expected to perform the following tasks:
+Folder interface are expected to perform the following tasks:
 
 =over 2
 
@@ -315,7 +351,7 @@ Please remember that because this method might renumber the messages
 in a folder.  Any code that remembers message numbers outside of the
 object could get out of sync after a C<pack>.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -346,7 +382,7 @@ reference that it returns.
 
 It also caches the header just like C<get_header> does.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -399,16 +435,14 @@ these options, refer to the documentation for C<MIME::Parser>.
 sub get_mime_message {
   my $self = shift;
   my $msg = shift;
-  my $parser;
+  my $parser = @_ % 2 ? shift : undef;
 
-  if ($_[0]->is_instance) {
-    $_[0]->class('MIME::ParserBase')
-      or croak "$_[0] isn't a subclass of MIME::ParserBase";
-    $parser = shift;
-  }
   my %options = @_;
 
   $parser ||= new MIME::Parser or return undef;
+  croak "$parser isn't a subclass of MIME::ParserBase"
+    unless $parser->isa('MIME::ParserBase');
+
   my $file = $self->get_message_file($msg) or return undef;
 
   !defined($options{'output_dir'})
@@ -440,7 +474,7 @@ escaping or unescaping regardless of the underlying folder
 architecture.  I am working on a mechanism that will resolve any
 resulting issues with this malfeature.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -463,7 +497,7 @@ sub get_message_file {
 Retrieves a message header.  Returns a reference to a B<Mail::Header>
 object.  It caches the result for later use.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -546,7 +580,7 @@ interface, make sure you pass a dup of the message reference when
 calling the SUPER of the method.  For examples, see the code for the
 stock folder interfaces provided with Mail::Folder.
 
-The folder interface is expected to perform the following tasks:
+Folder interfaces are expected to perform the following tasks:
 
 =over 2
 
@@ -610,9 +644,9 @@ sub dup {
   my $msg = shift;
   my $folder = shift;
   
-  my $message = $self->get_message($msg);
+  my $mref = $self->get_message($msg);
 
-  return($message && $folder->append_message($message));
+  return($mref && $folder->append_message($mref));
 }
 
 ###############################################################################
@@ -875,9 +909,9 @@ sub current_message {
   my $self = shift;
   my $key = shift;
 
-  return $self->{Current} if (!defined($key));
+  $self->{Current} = $key if defined($key);
 
-  return($self->{Current} = $key);
+  return $self->{Current};
 }
 
 ###############################################################################
@@ -887,7 +921,7 @@ sub current_message {
 Returns a sorted list of messages.  It works conceptually similar to
 the regular perl C<sort>.  The C<$func_ref> that is passed to C<sort>
 must be a reference to a function.  The function will be passed two
-B<MIME::Head> message references and it must return an integer less
+B<Mail::Header> message references and it must return an integer less
 than, equal to, or greater than 0, depending on how the list is to be
 ordered.
 
@@ -1115,7 +1149,7 @@ Returns a list of message numbers that have the given label C<$label>
 associated with them.
 
 If C<select_label> is called in a scalar context, it will return the
-quantity of message that have the given label.
+quantity of messages that have the given label.
 
 =cut
 
@@ -1179,7 +1213,7 @@ sub get_option {
   my $self = shift;
   my $option = shift;
 
-  return undef if (!defined($self->{Options}{$option}));
+  return undef unless defined($self->{Options}{$option});
   return $self->{Options}{$option};
 }
 
@@ -1354,7 +1388,7 @@ Registers a folder interface with Mail::Folder.
 
 sub register_folder_type { $folder_types{$_[1]} = $_[0]; }
 
-=head2 is_valid_folder_format($foldername)
+=head2 is_valid_folder_format($default, $foldername)
 
 In a folder interface, this method should return C<1> if it thinks the
 folder is valid format and return C<0> otherwise.  It is used by the
@@ -1435,19 +1469,30 @@ of the folder object.
 
 sub forget_message {
   delete $_[0]->{Messages}{$_[1]};
-  print("arf $_[1]\n") if exists($_[0]->{Messages}{$_[1]});
 }
 
 ###############################################################################
 
-sub _detect_folder_type {
+=head1 MISC
+
+=head2 detect_folder_type($foldername)
+
+Returns the folder type of the given C<$foldername>.
+Returns C<undef> if it cannot deduce the folder type.
+
+=cut
+
+sub detect_folder_type {
   my $folder = shift;
 
   for my $type (sort keys %folder_types) {
     return $type
       if (eval "$folder_types{$type}::is_valid_folder_format(\"$folder\")");
   }
+  return undef;
 }
+
+###############################################################################
 
 sub _update_content_length {
   my $self = shift;
@@ -1469,12 +1514,86 @@ sub _update_content_length {
 
 =head1 CAVEATS
 
+=head2 Forking children
+
 If a script forks while having any folders open, only the parent
 should make any changes to the folder.  In addition, when the parent
 closes the folder, related temporary files will be reaped.  This
 temporary file cleanup will not occur for the child.  I am
 contemplating a more general solution to this problem, but until then
 B<ONLY PARENTS SHOULD MANIPULATE MAIL>.
+
+=head2 Folder locking
+
+Ugh... Folder locking...
+
+Please note that I am not pleased with the folder locking as it is
+currently implemented in C<Mail::Folder> for some of the folder
+interfaces.  It will improve.
+
+Folder locking is problematic in certain circumstances.  For those not
+familier with some of these issues, I will elaborate.
+
+An interface like C<maildir> has no locking issues.  This is because
+the design of the folder format inherently eliminates the need for
+locking (cheers from the crowd).
+
+An interface like C<nntp> has no locking issues, because it merely
+implements an interface to a network protocol.  Locking issues are
+left as an exercise to the server on the other end of a socket.
+
+Interfaces like C<mbox>, on the other hand, are another story.
+
+Taken as a whole, the locking mechanism(s) used for C<mbox> folders
+are not inherently *rock-solid* in all circumstances.  To further
+complicate things, there are a several variations that have been
+implemented as attempts to work around the fundemental issues of the
+design of C<mbox> folder locking.
+
+In the simplest implementation, an C<mbox> folder merely uses a
+C<dotlock> file as a semaphore to prevent simultaneous updates to the
+folder.  All processes are supposed to cooperate and honor the lock
+file.
+
+In a non-NFS environment, the only typical issue with a dotlock is
+that the code implementing the lock file needs to be written in such a
+way as to prevent race conditions be testing for the locking and
+creating the lockfile.  This is typically done with a C<O_EXCL> flag
+passed to the call to C<open(2)>.  This allows for an atomic creation
+of the lock file if and only if the file does not already exist,
+assuming the operating system implements the C<O_EXCL> feature.  Some
+operating systems implementations have also resorted to using
+C<lockf>, C<fcntl>, or C<flock> as way to atomically test and set the
+folder lock.  The major issue for C<Mail::Folder> in this type of
+environment is to merely detect what flavor(s) is necessary and
+implement it.
+
+In an NFS environment, the story is somewhat different and a lot more
+complicated.  The C<O_EXCL> is not atomic across NFS and some
+implementations of C<flock> do not work across NFS, and not all
+operating systems use flock to lock C<mbox> folders.  To further
+complicate matters, all processes that lock C<mbox> folder need to do
+it un such a way that all clients mounting the data can also cooperate
+in the locking mechanism.
+
+Here are a few of the outstanding folder locking issues in
+C<Mail::Folder> for folder interfaces that do not provide a native way
+to solve locking issues.
+
+=over 2
+
+=item * only DotLock is supported
+
+There are snippets of code related to C<flock>, but I have disabled it
+for a time.
+
+=item * not NFS safe
+
+Sorry...
+
+=back
+
+We now return you to your regularly scheduled program...
 
 =head1 AUTHOR
 

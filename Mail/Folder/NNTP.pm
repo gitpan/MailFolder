@@ -6,8 +6,9 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: NNTP.pm,v 1.1 1997/03/18 02:37:38 kjj Exp $
+# $Id: NNTP.pm,v 1.2 1997/04/06 21:06:03 kjj Exp $
 
+require 5.00397;
 package Mail::Folder::NNTP;
 use strict;
 use vars qw($VERSION @ISA);
@@ -15,7 +16,7 @@ use Net::NNTP;
 use Mail::Header;
 
 @ISA = qw(Mail::Folder);
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 Mail::Folder::register_folder_type('Mail::Folder::NNTP', 'news');
 
@@ -49,10 +50,11 @@ use Carp;
 
 Populates the C<Mail::Folder> object with information about the folder.
 
-The given foldername needs to be of the format
+The given foldername can be given one of two formats.  Either
 C<news://NEWSHOST/NEWSGROUP> where C<NEWSHOST> is the nntp host and
-C<NEWSGROUP> is the news group of interest.  The folder naming issues
-have not completely been ironed out yet.
+C<NEWSGROUP> is the news group of interest, or C<#news:NEWSGROUP> in
+which case the C<NNTPSERVER> environment variable is referenced to
+determine the news host to connect to.
 
 Please note that it opens an NNTP connection for each open NNTP
 folder.
@@ -259,15 +261,17 @@ sub update_message {
 
 =head2 is_valid_folder_format($foldername)
 
-Returns C<1> if the foldername starts with the strings 'C<news://>'
-otherwise return 0;
+Returns C<1> if the foldername either starts with the string
+'C<news://>' or starts with the string 'C<#news:>' and the
+C<NNTPSERVER> environment variable is set, otherwise return 0;
 
 =cut
 
 sub is_valid_folder_format($foldername) {
   my $foldername = shift;
 
-  return ($foldername =~ /^news:\/\/[^\/]+\/.+$/);
+  return (($foldername =~ /^news:\/\//) ||
+	  (($foldername =~ /^\#news:/) && defined($ENV{NNTPSERVER})));
 }
 
 =head2 create($foldername)
@@ -305,15 +309,17 @@ sub _absorb_folder {
 sub _extract_hostname {
   my $foldername = shift;
 
-  $foldername =~ /^news:\/\/([^\/]+)\//;
-  return $1;
+  return $1 if ($foldername =~ /^news:\/\/([^\/]+)\//);
+  return $ENV{NNTPSERVER} if ($foldername =~ /^\#news:/);
+  return undef;
 }
 
 sub _extract_newsgroup_name {
   my $foldername = shift;
 
-  $foldername =~ /^news:\/\/[^\/]+\/(.+)$/;
-  return $1;
+  return $1 if ($foldername =~ /^news:\/\/[^\/]+\/(.+)$/);
+  return $1 if ($foldername =~ /^\#news:(.*)$/);
+  return undef;
 }
 ###############################################################################
 

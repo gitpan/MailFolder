@@ -10,6 +10,6 @@ okay_if(3, $folder->close);
 
 require 't/all.pl';
 
-okay_if(4, Mail::Folder::_detect_folder_type(full_folder()) eq 'maildir');
+okay_if(4, Mail::Folder::detect_folder_type(full_folder()) eq 'maildir');
 
 1;

@@ -12,9 +12,9 @@ copies.
 WARNING! WARNING! WARNING! WARNING! WARNING! WARNING! WARNING! WARNING!
 The method interface is currently in an evaluation phase.  Since the
 module is at an early stage of it's life, I'm not going to try too
-hard to provide for backward compatability to older alpha versions.
-I'm going to try to make all changes to the method interfaces before
-it reaches beta release.
+hard to provide for backward compatability to older alpha versions.  I
+am, however, going to try to make all changes to the method interfaces
+before it reaches beta release.
 
 To build and install the package execute the following commands:
 	perl Makefile.PL
@@ -34,21 +34,19 @@ think needs to be done in order to proceed to the next level.
 The NEWS file has summary information on the changes from release to
 release.
 
-The BUGS file as information on current implementation bugs/malfeatures.
+The BUGS file has information on current implementation bugs/malfeatures.
 
-The CREDITS file list folks who have been very particularly
-helpful/brave.
+The CREDITS file lists folks who have been particularly helpful/brave.
 
-The current version has been developed and tested against 5.003_24 or
-newer.
+The current version has been developed and tested against 5.003_97 or
+newer. Older versions won't work.
 
 The following modules are required:
     MailTools-1.09	      - for handling mail messages
     TimeDate-1.07	      - for date field slurping in the mbox interface
-    File-BasicFLock-96.072401 - for folder locking in the mbox interface
     File-Sync-0.04	      - for implementing qmail's style of writing to
 				maildir files
-    libnet-1.05		      - for the NNTP interface
+    libnet-1.05(_02)?	      - for the NNTP interface
 
 I've included the following folder interfaces:
     + Mail::Folder::Mbox - ye olde standard mailbox format (ugh).
@@ -77,16 +75,15 @@ I've included the following folder interfaces:
 	future.  I haven't decided how or if to map update_message and
 	append_message into NNTPspeak yet.
 
-These interfaces should serve as reasonable examples of hacking a
-folder interface into Mail::Folder.
+These interfaces should serve as reasonable (? :-) examples of hacking
+a folder interface into Mail::Folder.
 
 I don't plan on writing a lot of interfaces, myself, but here is a
 list of some of the ones I'm interested in enough to write (in order
-of likelihood):
-    + nntp - I'm going to try to write before MailFolder is out of beta
-    + imap - I don't think this will make it by MailFolder-1.0.
-	     The IMAP transaction model is going to be the seeds of
-	     version 2.0.
+of likelihood, not timeframe):
+    + imap - I don't think this will make it in by MailFolder-1.0.
+	     The IMAP transaction model is, however, going to be the
+	     seed of version 2.0.
 
 Here are some folder interfaces that would be nice to have, but since
 I don't use them, someone will probably have to contribute them:
@@ -95,7 +92,12 @@ I don't use them, someone will probably have to contribute them:
     + vm
     + babyl
     + mmdf
+    + mbx
     + any other interesting ones?
+
+Contact me if you are interested in writing an interface.  Another
+option is that if someone would be willing to spoon-feed me
+information about a folder format, I would be more likely to write it.
 
 It would appear that several of these are 'almost' exactly like other
 folder interfaces.  The current folder interfaces aren't written to be
@@ -104,8 +106,8 @@ until after 1.0.
 
 Check the documentation for Mail::Folder and the provided folder
 interfaces for information on using the package and adding folder
-interfaces.  Please let me know if you run across something needs to
-be documented better.
+interfaces.  Please let me know if you run across something that needs
+to be documented better.
 
 The examples directory contains some sample scripts that illustrate
 various uses of the module.  None of these are installed by the
@@ -116,16 +118,14 @@ Makefile.
 There is further information on these scripts in the README file in
 the examples directory.
 
-I'm making progress on the details of interfacing to MailTools and
-MIME-parser.  Expect progress soon.
-
 It is 'highly unlikely' that Mail::Folder will ever be capable of
 abstracting every folder feature of every MUA out there in a truly
 transparent way.  I don't, however, think that this detracts from some
 of it's more interesting potential uses:
-    + 100% pure perl MUAs
+    + 100% pure perl MUAs (at least one is in process)
     + perl scripting against mail folders
       (folder conversions are a snap :-)
+    + email to html conversion (any volunteers?)
     + accessing folders from otherwise non-email packages
 
 You might yourself why I don't just resort to a perl interface to
@@ -135,7 +135,7 @@ provide a more unbounded list of folder interfaces than c-client
 currently provides.  For example, there will probably not be a maildir
 interface in c-client until there is a perception of a sufficient need
 for it.  I'd much rather provide a tool that caters to the toolsmith
-in us all and provide a tool that makes it easier to roll your own.
+in us all.
 
 Please contact me if you use this for anything non-trivial.  This is
 not for permission, it's so I can get some idea of what folks are

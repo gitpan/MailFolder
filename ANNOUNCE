@@ -1,30 +1,37 @@
-The newest version (0.05) of the Mail::Folder module has been posted to
+The newest version (0.06) of the Mail::Folder module has been posted to
 CPAN under my author id (KJOHNSON) and name (Kevin_Johnson).
+
+... perl's response to the Law of Software Envelopment ...
 
 Mail::Folder provides a perl module interface to email folders that is
 independent from the physical folders.  The actual work on folders is
 done with folder interface modules lying 'beneath' the Mail::Folder
 interface.
 
-The module is in still alpha release.  Think twice about using it to
+The module is still in alpha release.  Think twice about using it to
 modify folders that you consider important (at the very least make
 backup copies :-).  That being said, I'll mention that I use it as the
 sole interface to my email at home.
 
 The method interface is currently in an evaluation phase.  Before it
-goes to beta, I expect to make method interfaces changes that won't be
+goes to beta, I expect to make method interface changes that won't be
 backwards compatible.
 
-The current version has been tested against 5.003_24 or newer.
+The current version was developed and tested against 5.003_97 or
+newer.  Older versions won't work.
 
 Here are some of the more notable new features and unmalfeatures added
 since the last release:
-	+ Big improvements in the maildir (ala qmail) folder interface.
-	  Sorry, the first whack at it was a botch.
-	+ Added get_mime_header and get_mime_message methods.
-	+ The beginnings of an NNTP folder interface.
-	+ An MUA based on pTk in the examples directory.
+	+ Had to nuke support for flock locking temporarily - sorry.
+	+ No longer needs File::BasicFlock (a replacement is in the works).
+	+ DotLocking can optionally be made NFS-safe.
+	+ Fixed some race conditions with folder locking.
 	+ Various bug fixes, cleanups, and optimizations.
+
+########################################################################
+NOTE: The next release will probably have several incompatible     :NOTE
+NOTE: interface changes.                                           :NOTE
+########################################################################
 
 Refer to the provided README file for additional information.
 

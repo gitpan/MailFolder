@@ -6,14 +6,16 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Mbox.pm,v 1.4 1997/03/18 02:37:38 kjj Exp $
+# $Id: Mbox.pm,v 1.5 1997/04/06 21:06:03 kjj Exp $
+
+require 5.00397;
 
 package Mail::Folder::Mbox;
 use strict;
 use vars qw($VERSION @ISA $folder_id);
 
 @ISA = qw(Mail::Folder);
-$VERSION = "0.05";
+$VERSION = "0.06";
 
 Mail::Folder::register_folder_type('Mail::Folder::Mbox', 'mbox');
 
@@ -24,7 +26,7 @@ Mail::Folder::Mbox - A Unix mbox interface for Mail::Folder.
 B<WARNING: This code is in alpha release. Expect the interface to
 change.>
 
-=head1 SYNOPSYS
+=head1 SYNOPSIS
 
 C<use Mail::Folder::Mbox;>
 
@@ -42,21 +44,43 @@ current message variable, so the current message in this folder
 interface defaults to C<1> and is not retained between C<open>s of a
 folder.
 
-If a C<Timeout> option is specified when the object is created, that
-value will be used to determine the timeout for attempting to aquire
-a folder lock.  The default is 10 seconds.
+If the C<Timeout> option is specified when the object is created, that
+value will be used to determine the timeout for attempting to aquire a
+folder lock.  The default is 10 seconds.
+
+If the C<DotLock> option is specified when the object is created, that
+value will be used to determine whether or not to use 'C<.lock>' style
+folder locking.  The default value is C<1>.
+
+If the C<Flock> option is specified when the object is created, that
+value will be used to determined whether or not to use C<flock> style
+folder locking.  By default, the option is not set.
+
+If the C<NFSLock> option is specified when the object is created, that
+value will be used to determine whether or not special measures are
+taken when doing C<DotLock>ing.  These special measures consist of
+constructing the lock file in a special manner that is more immune to
+atomicity problems with NFS when creating a folder lock file.  By
+default, the option is not set.  This option necessitates the ability
+to use long filenames.
+
+It is currently a fatal error to have both C<DotLock> and C<Flock>
+disabled.
+
+**NOTE** flock locking is currently disabled until I can sift out the
+'right way'. **NOTE**
 
 =cut
 
 use Mail::Folder;
 use Mail::Internet;
 use Mail::Header;
-use MIME::Head;
 use Mail::Address;
 use Date::Format;
 use Date::Parse;
-use File::BasicFlock;
+# use File::BasicFlock;
 use IO::File;
+use Sys::Hostname;		# for NFSLock option
 use Carp;
 
 $folder_id = 0;			# used to generate a unique id per open folder
@@ -97,31 +121,31 @@ sub open {
   
   return 0 unless $self->SUPER::open($foldername);
   
-  is_valid_folder_format($foldername)
+  is_valid_folder_format($foldername) || (-z $foldername)
     or croak "$foldername isn't an mbox folder";
-
+  
   if (($< == 0) || ($> == 0)) {	# if we're root we have to check it by hand
     $self->set_readonly unless ((stat($foldername))[2] & 0200);
   } else {
     $self->set_readonly unless (-w $foldername);
   }
-  $self->set_readonly unless (-w $foldername);
+  # $self->set_readonly unless (-w $foldername);
   
   $self->_lock_folder or return 0;
-
+  
   my $fh = new IO::File $foldername or croak "can't open $foldername: $!";
   $fh->seek(0, 2);
   $self->{MBOX_OldSeekPos} = $fh->tell;
   $fh->close;
 
-  my $qty_new_messages = $self->_absorb_mbox($foldername, 0);
-  unless ($self->_unlock_folder) {
+  my $qty_new_msgs = $self->_absorb_mbox($foldername, 0);
+  unless (defined($qty_new_msgs) && $self->_unlock_folder) {
     $self->_clean_working_dir;
     return 0;
   }
   $self->current_message(1);
   
-  return $qty_new_messages;
+  return $qty_new_msgs;
 }
 
 =head2 close
@@ -169,8 +193,6 @@ update the C<Status> fields appropriately.
 sub sync {
   my $self = shift;
 
-  my $last_message_number;
-  my $qty_new_messages = 0;
   my @statary;
   my $folder = $self->foldername;
   my $tmpfolder = "$folder.$$";
@@ -179,7 +201,7 @@ sub sync {
 
   return -1 if ($self->SUPER::sync == -1);
 
-  $last_message_number = $self->last_message;
+  my $last_msgnum = $self->last_message;
 
   return -1 unless ($self->_lock_folder);
 
@@ -189,7 +211,10 @@ sub sync {
   }
   $infh->close;
 
-  $qty_new_messages = $self->_absorb_mbox($folder, $self->{MBOX_OldSeekPos});
+  my $qty_new_msgs = $self->_absorb_mbox($folder, $self->{MBOX_OldSeekPos});
+  unless (defined($qty_new_msgs)) {
+    $self->_unlock_folder;
+  }
 
   unless ($self->is_readonly) {
     # we need to diddle current_message if it's pointing to a deleted msg
@@ -219,36 +244,39 @@ sub sync {
     # match the permissions of the original folder
     unless (chmod(($statary[2] & 0777), $tmpfolder)) {
       unlink($tmpfolder);
+      $self->_unlock_folder;
       croak "can't chmod $tmpfolder: $!";
     }
 
     for my $msg (sort { $a <=> $b } $self->message_list) {
-      my $message = $self->get_message($msg);
-      my $header = $self->get_header($msg);
+      my $mref = $self->get_message($msg);
+      my $href = $self->get_header($msg);
 
       unless ($self->get_option('NotMUA')) {
 	my $status = 'O';
 	$status = 'RO' if $self->label_exists($msg, 'seen');
-	$header->replace('Status', $status, -1);
+	$href->replace('Status', $status, -1);
       }
       
-      my $from = $header->get('Mail-From') || $header->get('From ');
+      my $from = $href->get('Mail-From') || $href->get('From ');
       
-      # we dup it cuz we're going to modify it
-      my $dup_header = $header->dup();
-      $dup_header->delete('Mail-From') if ($dup_header->count('Mail-From'));
+      # we dup them cuz we're going to modify them
+      my $dup_href = $href->dup;
+      my $dup_mref = $mref->dup;
+      $dup_href->delete('Mail-From') if ($dup_href->count('Mail-From'));
       
       $outfh->print("From $from");
-      $dup_header->print($outfh);
+      $dup_href->print($outfh);
       $outfh->print("\n");
-      $message->print_body($outfh);
+      $dup_mref->escape_from unless $self->get_option('Content-Length');
+      $dup_mref->print_body($outfh);
       $outfh->print("\n");
     }
     $outfh->close;
 
     # Move the original folder to a temp location
 
-    unless (rename($folder, "$folder.old")) {
+    unless (rename($folder, "$folder.tmp")) {
       $self->_unlock_folder;
       croak "can't move $folder out of the way: $!";
     }
@@ -257,22 +285,22 @@ sub sync {
     
     unless (rename($tmpfolder, $folder)) {
       $self->_unlock_folder;
-      croak "gack! can't rename $folder.old to $folder: $!"
-	unless (rename("$folder.old", $folder));
-      croak "can't move $folder to $folder.old: $!";
+      croak "gack! can't rename $folder.tmp to $folder: $!"
+	unless (rename("$folder.tmp", $folder));
+      croak "can't move $folder to $folder.tmp: $!";
     }
     
     # Delete the old original folder
     
-    unless (unlink("$folder.old")) {
+    unless (unlink("$folder.tmp")) {
       $self->_unlock_folder;
-      croak "can't unlink $folder.old: $!";
+      croak "can't unlink $folder.tmp: $!";
     }
   }
 
   $self->_unlock_folder;
 
-  return $qty_new_messages;
+  return $qty_new_msgs;
 }
 
 =head2 pack
@@ -290,14 +318,14 @@ sub pack {
   my $self = shift;
 
   my $newmsg = 0;
-  my $current_message = $self->current_message;
+  my $curmsg = $self->current_message;
 
   return 0 if (!$self->SUPER::pack);
 
   for my $msg (sort { $a <=> $b } $self->message_list) {
     $newmsg++;
     if ($msg > $newmsg) {
-      $self->current_message($newmsg) if ($msg == $current_message);
+      $self->current_message($newmsg) if ($msg == $curmsg);
       $self->remember_message($newmsg);
       $self->cache_header($newmsg, $self->{Messages}{$msg}{Header});
       $self->forget_message($msg);
@@ -328,18 +356,18 @@ sub get_message {
   my $file = "$self->{MBOX_WorkingDir}/$key";
 
   my $fh = new IO::File $file or croak "whoa! can't open $file: $!";
-  my $message = new Mail::Internet($fh,
-				   Modify => 0,
-				   MailFrom => 'COERCE');
-  $message->unescape_from unless $self->get_option('Content-Length');
+  my $mref = new Mail::Internet($fh,
+				Modify => 0,
+				MailFrom => 'COERCE');
+  $mref->unescape_from unless $self->get_option('Content-Length');
   $fh->close;
 
-  my $header = $message->head;
-  $self->cache_header($key, $header);
+  my $href = $mref->head;
+  $self->cache_header($key, $href);
 
   $self->add_label($key, 'seen');
 
-  return $message;
+  return $mref;
 }
 
 =item get_message_file ($msg_number)
@@ -388,14 +416,14 @@ sub get_header {
   my $file = "$self->{MBOX_WorkingDir}/$key";
 
   my $fh = new IO::File $file or croak "can't open $file: $!";
-  my $header = new Mail::Header($fh,
-				Modify => 0,
-				MailFrom => 'COERCE');
+  my $href = new Mail::Header($fh,
+			      Modify => 0,
+			      MailFrom => 'COERCE');
   $fh->close;
 
-  $self->cache_header($key, $header);
+  $self->cache_header($key, $href);
 
-  return $header;
+  return $href;
 }
 
 =head2 append_message($mref)
@@ -418,26 +446,26 @@ sub append_message {
   my $self = shift;
   my $mref = shift;
   
-  my $message_number = $self->last_message;
+  my $msgnum = $self->last_message;
   
   my $dup_mref = $mref->dup;
 
   return 0 unless $self->SUPER::append_message($dup_mref);
 
-  my $dup_header = $mref->head->dup;
-  $dup_mref->escape_from unless $self->get_option('Content-Length');
+  my $dup_href = $mref->head->dup;
+  $dup_mref->escape_from unless ($self->get_option('Content-Length'));
   
-  $message_number++;
-  my $fh = new IO::File("$self->{MBOX_WorkingDir}/$message_number",
+  $msgnum++;
+  my $fh = new IO::File("$self->{MBOX_WorkingDir}/$msgnum",
 			O_CREAT|O_WRONLY, 0600)
-    or croak "can't create $self->{MBOX_WorkingDir}/$message_number: $!";
-  _coerce_header($dup_header);
-  $dup_header->print($fh);
+    or croak "can't create $self->{MBOX_WorkingDir}/$msgnum: $!";
+  _coerce_header($dup_href);
+  $dup_href->print($fh);
   $fh->print("\n");
   $dup_mref->print_body($fh);
   $fh->close;
 
-  $self->remember_message($message_number);
+  $self->remember_message($msgnum);
   
   return 1;
 }
@@ -466,7 +494,7 @@ sub update_message {
   my $filename = "$self->{MBOX_WorkingDir}/$key";
   
   my $dup_mref = $mref->dup;
-  my $dup_header = $dup_mref->head->dup;
+  my $dup_href = $dup_mref->head->dup;
 
   return 0 unless $self->SUPER::update_message($key, $dup_mref);
 
@@ -474,8 +502,8 @@ sub update_message {
 
   my $fh = new IO::File "$filename.new", O_CREAT|O_WRONLY, 0600
     or croak "can't create $filename.new: $!";
-  _coerce_header($dup_header);
-  $dup_header->print($fh);
+  _coerce_header($dup_href);
+  $dup_href->print($fh);
   $fh->print("\n");
   $dup_mref->print_body($fh);
   $fh->close;
@@ -514,26 +542,36 @@ sub init {
 
   $folder_id++;
   $self->{MBOX_WorkingDir} = "$tmpdir/mbox.$folder_id.$$";
+  $self->set_option('DotLock', 1)
+    unless defined($self->get_option('DotLock'));
+
+  croak "flock locking currently not implemented - sorry..."
+    if ($self->get_option('Flock'));
 
   return 1;
 }
 
 =head2 is_valid_folder_format($foldername)
 
-Returns C<1> is the folder is a plain file and starts with the string
-'C<From >'.
+Returns C<1> if the folder is a plain file and starts with the string
+'C<From >', otherwise it returns C<0>.
 
-There is one small sniggle here.  If the folder is a file and is zero
-size, it returns C<1>.  This may or may not cause problems with other
-folder formats that are based on a large flat file.
+Returns C<1> if the folder is a zero-length file and the
+C<$Mail::Format::DefaultEmptyFileFormat> class variable is set to
+'C<mbox>'.
+
+Otherwise it returns C<0>.
 
 =cut
 
 sub is_valid_folder_format {
   my $foldername = shift;
-  
-  return 0 unless (-f $foldername);
-  return 1 if (-z $foldername); # yuck...
+
+  return 0 if (! -f $foldername);
+  if (-z $foldername) {
+    return 1 if ($Mail::Folder::DefaultEmptyFileFormat eq 'mbox');
+    return 0;
+  }
 
   my $fh = new IO::File $foldername or return 0;
   my $line = <$fh>;
@@ -575,35 +613,37 @@ sub _absorb_mbox {
   my $folder = shift;
   my $seek_pos = shift;
 
-  my $qty_new_messages = 0;
+  my $qty_new_msgs = 0;
   my $last_was_blank = 0;
   my $is_blank = 0;
-  my $last_message_number = $self->last_message;
-  my $new_message_number = $last_message_number;
+  my $last_msgnum = $self->last_message;
+  my $new_msgnum = $last_msgnum;
   my $outfile_is_open = 0;
   my $outfh;
 
   if (! -e $self->{MBOX_WorkingDir}) {
     mkdir($self->{MBOX_WorkingDir}, 0700)
-      or croak "can't create $self->{MBOX_WorkingDir}: $!";
+      or (carp "can't create $self->{MBOX_WorkingDir}: $!" and return undef);
   } elsif (! -d $self->{MBOX_WorkingDir}) {
-    croak "$self->{MBOX_WorkingDir} isn't a directory!";
+    carp "$self->{MBOX_WorkingDir} isn't a directory!";
+    return undef;
   }
 
   my $infh = new IO::File $folder or croak "can't open $folder: $!";
   $infh->seek($seek_pos, 0)
-    or croak "can't seek to $seek_pos in $folder: $!";
+    or (carp "can't seek to $seek_pos in $folder: $!" and return undef);
   while (<$infh>) {
     $is_blank = /^$/ ? 1 : 0;
     if (/^From /) {
       $outfh->close if ($outfile_is_open);
       $outfile_is_open = 0;
-      $new_message_number++;
-      $qty_new_messages++;
-      $self->remember_message($new_message_number);
-      $outfh = new IO::File("$self->{MBOX_WorkingDir}/$new_message_number",
+      $new_msgnum++;
+      $qty_new_msgs++;
+      $self->remember_message($new_msgnum);
+      $outfh = new IO::File("$self->{MBOX_WorkingDir}/$new_msgnum",
 			    O_CREAT|O_WRONLY, 0600)
-	or croak "can't create $self->{MBOX_WorkingDir}/$new_message_number: $!";
+	or (carp "can't create $self->{MBOX_WorkingDir}/$new_msgnum: $!"
+	    and return undef);
       $outfile_is_open++;
     } else {
       $outfh->print("\n") if ($last_was_blank);
@@ -615,13 +655,13 @@ sub _absorb_mbox {
   $self->{MBOX_OldSeekPos} = $infh->tell;
   $infh->close;
 
-  for my $msg (($last_message_number + 1) .. $self->last_message) {
-    my $header = $self->get_header($msg);
-    my $status = $header->get('Status') or next;
+  for my $msg (($last_msgnum + 1) .. $self->last_message) {
+    my $href = $self->get_header($msg);
+    my $status = $href->get('Status') or next;
     $self->add_label($msg, 'seen') if ($status =~ /R/);
   }
 
-  return $qty_new_messages;
+  return $qty_new_msgs;
 }
 
 # Mbox files must have a 'From ' line at the beginning of each
@@ -634,25 +674,25 @@ sub _absorb_mbox {
 # synthesize one.  In either case, a 'From ' string is returned.
 
 sub _coerce_header {
-  my $header = shift;
+  my $href = shift;
   my $from = '';
   my $date = '';
   
-  my $mailfrom = $header->get('From ') || $header->get('Mail-From');
+  my $mailfrom = $href->get('From ') || $href->get('Mail-From');
   
   unless ($mailfrom) {
     if ($from =
-	$header->get('Reply-To') ||
-	$header->get('From') ||
-	$header->get('Sender') ||
-	$header->get('Return-Path')) { # this is dubious
+	$href->get('Reply-To') ||
+	$href->get('From') ||
+	$href->get('Sender') ||
+	$href->get('Return-Path')) { # this is dubious
       my @addrs = Mail::Address->parse($from);
       $from = $addrs[0]->address();
     } else {
       $from = 'NOFROM';
     }
     
-    if ($date = $header->get('Date')) {
+    if ($date = $href->get('Date')) {
       chomp($date);
       $date = gmtime(str2time($date));
     } else {
@@ -665,14 +705,14 @@ sub _coerce_header {
     $mailfrom = "$from $date\n";
   }
   
-  $header->delete('From ');
-  $header->delete('Mail-From');
+  $href->delete('From ');
+  $href->delete('Mail-From');
   
-  $header->mail_from('KEEP');
-  $header->add('From ', $mailfrom, 0);
-  $header->mail_from('COERCE');
+  $href->mail_from('KEEP');
+  $href->add('From ', $mailfrom, 0);
+  $href->mail_from('COERCE');
   
-  return $header;
+  return $href;
 }
 
 sub _clean_working_dir {
@@ -685,34 +725,65 @@ sub _lock_folder {
   my $self = shift;
   my $folder = $self->foldername;
 
+  croak "DotLock and Flock are both disabled\n"
+    unless ($self->get_option('DotLock') || $self->get_option('Flock'));
+
   my $timeout = $self->get_option('Timeout');
   $timeout ||= 10;
   my $sleep = 1.0;		# maybe this should be configurable
 
   if ($self->get_option('DotLock')) {
+    my $nfshack = 0;
+    my $lockfile = "$folder.lock";
+    if ($self->get_option('NFSLock')) {
+      my $host = hostname;
+      $nfshack++;
+      my $time = time;
+      $lockfile .= ".$time.$$.$host";
+    }
     for my $num (1 .. int($timeout / $sleep)) {
-      unless (-e "$folder.lock") {
-	my $fh = new IO::File "$folder.lock", O_CREAT|O_WRONLY, 0600
-	  or croak "can't create $folder.lock: $!";
+      my $fh;
+      if ($fh = new IO::File $lockfile, O_CREAT|O_EXCL|O_WRONLY, 0600) {
 	$fh->close;
+	if ($nfshack) {
+	  # Whhheeeee!!!!!
+	  # In NFS, the O_CREAT|O_EXCL isn't guaranteed to be atomic.
+	  # So we create a temp file that is probably unique in space
+	  # and time ($folder.lock.$time.$pid.$host).
+	  # Then we use link to create the real lock file. Since link
+	  # is atomic across nfs, this works.
+	  # It loses if it's on a filesystem that doesn't do long filenames.
+	  link $lockfile, "$folder.lock"
+	    or carp "link return: $!\n";
+	  my @statary = stat($lockfile);
+	  unlink $lockfile;
+	  if (!defined(@statary) || $statary[3] != 2) { # failed to link?
+	    goto RETRY;
+	  }
+	}
 	return 1;
       }
+    RETRY:
       select(undef, undef, undef, $sleep);
     }
     return 0;
   }
 
-  return lock($folder);
+  # return lock($folder) if ($self->get_option('Flock'));
+  return 0;
 }
 
 sub _unlock_folder {
   my $self = shift;
   my $folder = $self->foldername;
 
-  return((-e "$folder.lock") ? unlink("$folder.lock") : 1)
-    if ($self->get_option('DotLock'));
+  if ($self->get_option('DotLock')) {
+    return unlink("$folder.lock") if (-e "$folder.lock");
+    return 1;
+  }
 
-  return unlock($folder);
+  # return unlock($folder) if ($self->get_option('Flock'));
+  return 0;
 }
 
 =head1 AUTHOR

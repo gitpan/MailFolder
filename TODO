@@ -1,20 +1,11 @@
-! remove 'use MIME::Head' from folder interfaces
-
-###############################################################################
-! docs for sort mention MIME::Head incorrectly
-
-! select_label docs: s/message that have/messages that have/
-
-! make sure MANIFEST doesn't include any garbage
-
-! make sure file perms are correct
++ reintroduce flock locking
 ###############################################################################
 + nntp interface
-    * grok the NNTPSERVER environment variable and #news as a
-      prefix for the folder name
-    * need to handle idle disconnect
+    * implement sync
+    * figure out best way to handle currently unimplemented methods
+    * figure how to write regression tests
+    + need to handle idle disconnect
     + implement authinfo command
-    + write some type of regression test
 
 + maildir interface
     * migrate files from 'new' to 'cur' more intelligently, instead of
@@ -30,7 +21,8 @@
       This currently has problems - deleting the Return-Path field in
       the regression test causes an error in Mail::Header.  I'm
       investigating this.
-    + synthesize Delivered-To if necessary
+    + synthesize Delivered-To (can sometimes use 'for' clause in final
+      Received line)
     + make sure any 'tmp' files we create are being cleaned up if we
       error-out
     + regression test still needs to check correct use of 'tmp' and 'new'
@@ -44,6 +36,10 @@
     * add regression tests for labels (once X-Mailfolder-Labels is available)
     + optionally read entire folder into memory instead of into a temp dir
     + there are few more chars in the 'Status' field that we could understand
+	U not downloaded and not deleted.
+	D to be deleted.
+	N new
+      Does anyone actually know of instances of these being used?
 
 + emaul interface
     * have update, refile, and pack(?) queue operations for later syncing
@@ -52,60 +48,23 @@
     + improve folder locking
 ###############################################################################
 + methods to add:
-    * replace_head (or provide something equivalent)
+    + replace_head (or provide something equivalent)
       Have sync and update_message merge in the cached header.
-    + select (similar in style to the imap equivalent)
     + sort_physical_folder
     + create_digest
     + threaded_sort
     + delete_folder
     + list_folders
+    + select (similar in style to the imap equivalent)
 ###############################################################################
-* decide whether all current fatal errors should actually be fatal
+* package it as a CPAN Bundle.  This will be done once the dependancy
+  list is more stable.
 
-* error returns and fatal errors need to be cleaned up big time
-
-* need to work out the best way to handle 'New' vs. 'Old' messages.
-  (eg: 'O' char in the mbox 'Status:' field, and migrating messages
-   from 'new' to 'cur' in maildir)
-
-* add folder attributes as hints to MailFolder and to users of MailFolder
-    + needs_from_escape
-    + no_persistent_labels
-    + no_persistent_current_message
-
-* for folders that don't support persistent labels add an option has
-  it use a X-Mailfolder-Labels field in the header.
-
-* all of the interfaces should queue updates and appends instead of
-  acting on them immediately
-
-* look at replacing BasicLock modules
+* migrate some of the stuff in 'new' to 'open'
 
 * some of the methods should be renamed (ugh)
 
-* add a version of open that only snarfs out headers and some summary info.
-  This would help for various types of tasks that don't need full access
-  to the body of all of the messages in a folder.
-
-* have 'open' be able to specify folder type instead of only 'new'
-  being able to
-
-* maybe 'open' needs to return undef on failure instead of 0 and have
-  it return qty of messages imported (where 0 == '0 but true')
-###############################################################################
-+ add an option for default folder type when the folder is an empty file
-
-+ maybe refile should set a label like delete does
-
-+ in general, we should navigate via message-id when evaluating folder
-  additions, this will make us more immune to having other folder
-  manglers reorder the folder out from underneath us
-
-+ autoloader
-
-+ Add Size member to Messages structure and have folder interfaces
-  fill in the information.
+* maybe eliminate get_message_file
 
 ? Some of the methods might benefit from being able to be passed lists
   of certain items.  This would change the order of arguments in some
@@ -117,25 +76,63 @@
     + delete_label	(reorder)
     + clear_label
 
+* for folders that don't support persistent labels add an option has
+  it use a X-Mailfolder-Labels field in the header.
+
+* decide whether all current fatal errors should actually be fatal
+
+* error returns and fatal errors need to be cleaned up big time
+
+* need to work out the best way to handle 'New' vs. 'Old' messages.
+  (eg: 'O' char in the mbox 'Status:' field, and migrating messages
+   from 'new' to 'cur' in maildir)
+
+* add folder attributes as hints to MailFolder and to users of MailFolder
+    + no_persistent_labels
+    + no_persistent_current_message
+
+* all of the interfaces should queue updates and appends instead of
+  acting on them immediately
+
+* add a version of open that only snarfs out headers and some summary info.
+  This would help for various types of tasks that don't need full access
+  to the body of all of the messages in a folder.
+
+* maybe 'open' needs to return undef on failure instead of 0 and have
+  it return qty of messages imported (where 0 == '0 but true')
+###############################################################################
++ maybe refile should set a label like delete does
+
++ in general, we should navigate via message-id when evaluating folder
+  additions, this will make us more immune to having other folder
+  manglers reorder the folder out from underneath us
+
++ revamp how folder-locking style is specified
+
++ Add Size member to Messages structure and have folder interfaces
+  fill in the information.
+
 + there are a few hard-coded constants that should be config variables
 
 + Provide additional methods to alleviate direct access of $self
   members by folder interface coders.
 
++ autoloader
+
 + Handle hard errors better.
   Use an internal function that can be replaced using a method.
   Maybe use exception processing (this would help Mbox->sync).
+
++ sprinkle in some debug_print calls
 
 + profile the code
 
 + at some point, at least part of the open call in the mbox interface
   will probably need to be rewritten in C.  I find this annoying...
-
-+ sprinkle in some debug_print calls
 ###############################################################################
 + Various folder interfaces:
-    + imap
+    + imap (this will be started after 1.0 is released - stay tuned)
 
 + more example scripts:
-    + a simple folder->html converter
+    + a simple folder->html converter (any volunteers?)
 ###############################################################################

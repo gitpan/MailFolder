@@ -6,13 +6,14 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Emaul.pm,v 1.5 1997/03/18 02:37:38 kjj Exp $
+# $Id: Emaul.pm,v 1.6 1997/04/06 21:06:03 kjj Exp $
 
+require 5.00397;
 package Mail::Folder::Emaul;
 use strict;
 use vars qw($VERSION @ISA);
 @ISA = qw(Mail::Folder);
-$VERSION = "0.05";
+$VERSION = "0.06";
 
 Mail::Folder::register_folder_type('Mail::Folder::Emaul', 'emaul');
 
@@ -23,7 +24,7 @@ Mail::Folder::Emaul - An Emaul folder interface for Mail::Folder.
 B<WARNING: This code is in alpha release. Expect the interface to
 change.>
 
-=head1 SYNOPSYS
+=head1 SYNOPSIS
 
 C<use Mail::Folder::Emaul;>
 
@@ -50,9 +51,9 @@ a folder lock.  The default is 10 seconds.
 use Mail::Folder;
 use Mail::Internet;
 use Mail::Header;
-use MIME::Head;
 use IO::File;
 use DirHandle;
+use Sys::Hostname;
 use Carp;
 
 =head1 METHODS
@@ -270,8 +271,8 @@ sub get_message {
   $fh->close;
   $mref->delete('Content-Length');
 
-  my $header = $mref->head;
-  $self->cache_header($key, $header);
+  my $href = $mref->head;
+  $self->cache_header($key, $href);
   $self->add_label($key, 'seen');
   
   return $mref;
@@ -321,13 +322,13 @@ sub get_header {
   return $self->{Messages}{$key}{Header} if ($self->{Messages}{$key}{Header});
 
   my $fh = new IO::File $self->foldername . "/$key" or return undef;
-  my $header = new Mail::Header($fh,
-				Modify => 0,
-				MailFrom => 'COERCE');
+  my $href = new Mail::Header($fh,
+			      Modify => 0,
+			      MailFrom => 'COERCE');
   $fh->close;
-  $header->delete('Content-Length');
-  $self->cache_header($key, $header);
-  return $header;
+  $href->delete('Content-Length');
+  $self->cache_header($key, $href);
+  return $href;
 }
 
 =head2 append_message($mref)
@@ -471,16 +472,40 @@ sub _lock_folder {
   $timeout ||= 10;
   my $sleep = 1.0;		# maybe this should be configurable
 
+  my $lockfile = "$folder/.lock";
+  my $nfshack = 0;
+  if ($self->get_option('NFSLock')) {
+    $nfshack++;
+    my $host = hostname;
+    my $time = time;
+    $lockfile .= ".$time.$$.$host";
+  }
+
   for my $num (1 .. int($timeout / $sleep)) {
-    unless (-e "$folder/.lock") {
-      $fh = new IO::File ">$folder/.lock"
-	or croak "can't create $folder/.lock: $!";
+    if ($fh = new IO::File $lockfile, O_CREAT|O_EXCL|O_WRONLY, 0644) {
       $fh->close;
+      if ($nfshack) {
+	# Whhheeeee!!!!!
+	# In NFS, the O_CREAT|O_EXCL isn't guaranteed to be atomic.
+	# So we create a temp file that is probably unique in space
+	# and time ($folder.lock.$time.$pid.$host).
+	# Then we use link to create the real lock file. Since link
+	# is atomic across nfs, this works.
+	# It loses if it's on a filesystem that doesn't do long filenames.
+	link $lockfile, "$folder/.lock"
+	  or carp "link return: $!\n";
+	my @statary = stat($lockfile);
+	unlink $lockfile;
+	if (!defined(@statary) || $statary[3] != 2) { # failed to link?
+	  goto RETRY;
+	}
+      }
       return 1;
     }
+  RETRY:
     select(undef, undef, undef, $sleep);
   }
-  carp("can't lock $folder folder");
+  carp("can't lock $folder folder: $!");
   return 0;
 }
 

@@ -5,7 +5,7 @@ Andreas Koenig <andreas.koenig@franz.ww.tu-berlin.de>
 Chris Faylor <cgf@bbc.com>
     + first person to be brave enough to write an MUA in Mail::Folder
     + suggestions and bug reports
-Cary Evans <c.evans@student.canterbury.ac.nz>
+Cary Evans <c.evans@clear.net.nz>
     + provided very good feedback on first pass at the maildir interface
     + wrote File::Sync
 Graham Barr <Graham.Barr@tiuk.ti.com>

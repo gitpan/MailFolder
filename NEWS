@@ -1,5 +1,36 @@
-$Id: NEWS,v 1.4 1997/03/18 02:37:38 kjj Exp $
+$Id: NEWS,v 1.5 1997/04/06 21:06:03 kjj Exp $
 
+-------------------------------------------------------------------------------
+Version 0.6
+-------------------------------------------------------------------------------
+
+Added DefaultEmptyFileFormat class variable.
+
+Temporarily turned off flock locking in mbox interface.
+
+Added NFSLock option.
+
+Added DefaultFolderType option.
+
+Added some documentation about folder locking.
+
+Reduced race condition in emaul folder locking.
+
+No longer uses File::BasicFlock.
+
+Fixed a bug in the use of escape_from in mbox.
+
+Reduced race condition in mbox folder locking.
+
+Added ability for nntp interface to understand NNTPSERVER env variable.
+
+getpop.pl now does 'use strict;'.
+
+Added NotMUA option to folder opening in getpop.pl.
+
+Added 'Modify => 0' to Mail::Internet object creation in getpop.pl.
+
+Promoted _detect_folder_type to detect_folder_type.
 -------------------------------------------------------------------------------
 Version 0.5
 -------------------------------------------------------------------------------

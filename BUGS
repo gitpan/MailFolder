@@ -1,10 +1,9 @@
++ flock locking isn't available yet.  RSN.
+
 + The Emaul and Maildir interfaces currently perform update_message
   and append_message against the actual folder instead of in a temp
   area that would be committed by sync.  This should be fixed before
   it's out of alpha release.
-
-+ The Mbox folder locking stuff is not completely thought out yet.
-  File locking of mbox files sux large rocks...
 
 + Since it's alpha code, the interface is still subject to change...
   In particular, some of the routines will be changed to accept lists.

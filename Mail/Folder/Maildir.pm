@@ -6,15 +6,16 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Maildir.pm,v 1.2 1997/03/18 02:37:38 kjj Exp $
+# $Id: Maildir.pm,v 1.3 1997/04/06 21:06:03 kjj Exp $
 
+require 5.00397;
 package Mail::Folder::Maildir;
 use strict;
 use POSIX qw(ENOENT);
 use vars qw($VERSION @ISA);
 
 @ISA = qw(Mail::Folder);
-$VERSION = "0.05";
+$VERSION = "0.06";
 
 Mail::Folder::register_folder_type('Mail::Folder::Maildir', 'maildir');
 
@@ -27,7 +28,7 @@ Mail::Folder::Maildir - A maildir folder interface for Mail::Folder.
 B<WARNING: This code is in alpha release. Expect the interface to
 change.>
 
-=head1 SYNOPSYS
+=head1 SYNOPSIS
 
 C<use Mail::Folder::Maildir;>
 
@@ -51,7 +52,6 @@ C<http://pobox.com/~djb/qmail.html>.
 use Mail::Folder;
 use Mail::Internet;
 use Mail::Header;
-use MIME::Head;
 use Mail::Address;
 use Sys::Hostname;
 use IO::File;
@@ -231,8 +231,8 @@ sub get_message {
 				MailFrom => 'COERCE');
   $fh->close;
 
-  my $header = $mref->head;
-  $self->cache_header($key, $header);
+  my $href = $mref->head;
+  $self->cache_header($key, $href);
   $self->add_label($key, 'seen');
 
   return $mref;
@@ -278,14 +278,14 @@ sub get_header {
   my $filename = $self->foldername . "/$self->{Messages}{$key}{Filename}";
 
   my $fh = new IO::File $filename or return undef;
-  my $header = new Mail::Header($fh,
-				Modify => 0,
-				MailFrom => 'COERCE');
+  my $href = new Mail::Header($fh,
+			      Modify => 0,
+			      MailFrom => 'COERCE');
   $fh->close;
 
-  $self->cache_header($key, $header);
+  $self->cache_header($key, $href);
 
-  return $header;
+  return $href;
 }
 
 =head2 append_message($mref)

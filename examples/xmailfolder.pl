@@ -80,7 +80,7 @@
 #      folder window
 #   figure out how set width of scrollbars - normal way isn't working
 
-require 5.003;
+require 5.00397;
 
 my $VERSION = '0.01';
 use vars qw($top
@@ -254,7 +254,7 @@ sub GenerateFolderListLine {
   my $expanded_filename = expand_filename($foldername);
   my $type;
 
-  $type = Mail::Folder::_detect_folder_type($expanded_filename);
+  $type = Mail::Folder::detect_folder_type($expanded_filename);
 
   return sprintf("%s %-7s %s",
 		 ($foldersinfo->{$foldername}{Status} eq 'open' ?
