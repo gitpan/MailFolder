@@ -6,7 +6,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: Mbox.pm,v 1.1 1996/07/16 04:47:18 kjj Exp $
+# $Id: Mbox.pm,v 1.2 1996/08/03 17:32:21 kjj Exp $
 
 package Mail::Folder::Mbox;
 @ISA = qw(Mail::Folder);
@@ -15,7 +15,7 @@ package Mail::Folder::Mbox;
 
 Mail::Folder::Mbox - A Unix mbox interface for Mail::Folder.
 
-I<B<WARNING: This code is in alpha release.> Expect the interface to
+B<WARNING: This code is in alpha release. Expect the interface to
 change.>
 
 =head1 SYNOPSYS
@@ -35,24 +35,44 @@ current message variable, so the current message in this folder
 interface defaults to C<1> and is not retained between C<open>s of a
 folder.
 
+C<Mbox> needs the following module packages:
+
+=over 2
+
+=item C<TimeDate>
+
+=item C<File-Tools>
+
+=item C<File-BasicFLock>
+
+=back
+
 =cut
 
 use Mail::Folder;
 use Mail::Internet;
+use Mail::Address;
 use Carp;
 use File::Tools;
+use Date::Format;
+use Date::Parse;
+use File::BasicFlock;
 
 use vars qw($VERSION);
 
-$VERSION = "0.02";
+$VERSION = "0.03";
 
 $folder_id = 0;			# used to generate a unique id per open folder
 
+Mail::Folder::register_folder_type(Mail::Folder::Mbox, 'mbox');
+
 =head1 METHODS
 
-=head2 init()
+=head2 init
 
-Initializes various items specific to B<emaul>.
+Initializes various items specific to B<Mbox>.
+
+=over 2
 
 =item * Determines an appropriate temporary directory.
 
@@ -64,6 +84,8 @@ will be used to hold the temporary working of the folder.
 =item * Initializes C<$self-E<gt>{MsgFilePrefix}> to a string that will be
 used to create temporary filenames when extracting messages from the
 folder.
+
+=back
 
 =cut
 
@@ -81,6 +103,8 @@ sub init {
 
 =head2 open($folder_name)
 
+=over 2
+
 =item * Call the superclass C<open> method.
 
 =item * Lock the folder.
@@ -92,54 +116,96 @@ sub init {
 =item * For every message in the folder, add the message_number to the
 object's list of messages.
 
+=back
+
 =cut
 
 sub open {
   my $self = shift;
-  my $folder = shift;
+  my $foldername = shift;
 
   my $message_number = 0;
   my $file_pos = 0;
   local(*FILE);
 
-  return(0) unless $self->SUPER::open($folder);
+  return(0) unless $self->SUPER::open($foldername);
 
-  lock_folder($folder) || return(0);
+  valid_mbox($foldername) || croak("$foldername isn't an mbox file\n");
 
-  if (!copy($folder, $self->{WorkingFile})) {
-    unlock_folder($folder);
-    croak("open can't create $self->{WorkingFile}: $!\n");
+  $self->set_readonly if (! -w $foldername);
+
+  lock_folder($foldername) || return(0);
+
+  if (!copy($foldername, $self->{WorkingFile})) {
+    unlock_folder($foldername);
+    croak("can't create $self->{WorkingFile}: $!\n");
   }
 
-  if (!unlock_folder($folder)) {
+  if (!unlock_folder($foldername)) {
     unlink($self->{WorkingFile});
     return(0);
   }
 
-  # still need to check to see if it's really an mbox file
+  $self->remember_mbox_points($self->{WorkingFile}, 0);
 
-  # need to figure out best way to remember the line number or
-  # seek-position of the start of each message
-
-  open(FILE, $self->{WorkingFile}) ||
-    croak("open can't open $self->{WorkingFile}: $!\n");
-  while (<FILE>) {
-    if (/^From /) {
-      $message_number++;
-      $self->remember_message($message_number);
-      $self->{Messages}{$message_number} = $file_pos;
-    }
-    $file_pos = tell(FILE);
-  }
-  close(FILE);
-  $self->sort_message_list();
-
+  $self->sort_message_list;
   $self->current_message(1);
 
   return(1);
 }
 
-=head2 close()
+sub valid_mbox {
+  my $filename = shift;
+  local(*FILE);
+
+  return(1) if (-z $filename);
+  open(FILE, $filename) || croak("can't open $filename: $!\n");
+  $_ = <FILE>;
+  close(FILE);
+  return(/^From /);
+}
+
+sub remember_mbox_points {
+  my $self = shift;
+  my $filename = shift;
+  my $first_message_number = shift;
+
+  my $message_number = $first_message_number;
+  my $seek_pos = 0;
+  my $file_pos = 0;
+  my $last_was_blank = 0;
+
+  $seek_pos = $self->{Messages}{$message_number}{MboxFilePos}[1]
+    if ($message_number);
+
+  open(FILE, $filename) || croak("can't open $filename: $!\n");
+  seek(FILE, $seek_pos, 0) ||
+    croak("can't seek to $seek_pos in $filename: $!\n");
+  while (<FILE>) {
+    if (/^From /) {
+      $message_number++;
+      $self->remember_message($message_number);
+      $self->{Messages}{$message_number}{MboxFilePos} = [$file_pos, 0];
+      if ($message_number > 1) {
+	$message_number--;
+	$self->{Messages}{$message_number}{MboxFilePos}[1] =
+	  $file_pos - ($last_was_blank ? 2 : 1);
+	$message_number++;
+      }
+    }
+    $file_pos = tell(FILE);
+    $last_was_blank = /^$/ ? 1 : 0;
+  }
+  if ($message_number) {
+    $self->{Messages}{$message_number}{MboxFilePos}[1] =
+      $file_pos - ($last_was_blank ? 2 : 1);
+  }
+  close(FILE);
+
+  return($message_number - $first_message_number);
+}
+
+=head2 close
 
 Deletes the working copy of the folder and calls the superclass
 C<close> method.
@@ -150,10 +216,12 @@ sub close {
   my $self = shift;
 
   unlink($self->{WorkingFile});
-  return($self->SUPER::close());
+  return($self->SUPER::close);
 }
 
-=head2 sync()
+=head2 sync
+
+=over 2
 
 =item * Call the superclass C<sync> method
 
@@ -174,6 +242,8 @@ messages in the working copy that aren't flagged for deletion.
 
 =item * Unlock the folder
 
+=back
+
 =cut
 
 sub sync {
@@ -183,118 +253,113 @@ sub sync {
   my $qty_new_messages = 0;
   my $i = 0;
   my @statary;
-  my $folder = $self->foldername();
+  my $folder = $self->foldername;
   my $tmpfolder = "$folder.$$";
   my $file_pos;
 
   local(*INFILE);
   local(*OUTFILE);
 
-  return(-1) if ($self->SUPER::sync() == -1);
+  return(-1) if ($self->SUPER::sync == -1);
 
-  if (!open(OUTFILE, ">>$self->{WorkingFile}")) {
-    croak("sync can't append to $self->{WorkingFile}: $!\n");
-  }
+  open(OUTFILE, ">>$self->{WorkingFile}") ||
+    croak("can't append to $self->{WorkingFile}: $!\n");
+
   chmod(0600, $self->{WorkingFile}) ||
-    croak("sync can't chmod $self->{WorkingFile}: $!\n");
+    croak("can't chmod $self->{WorkingFile}: $!\n");
 
-  $last_message_number = $self->last_message();
+  $last_message_number = $self->last_message;
 
   return(-1) if (!lock_folder($folder));
 
+  $qty_new_messages = $self->remember_mbox_points($folder,
+						  $last_message_number);
+
   if (!open(INFILE, $folder)) {
     unlock_folder($folder);
-    croak("sync can't open $folder: $!\n");
+    croak("can't open $folder: $!\n");
   }
 
-  $file_pos = tell(INFILE);
+  $file_pos = tell(OUTFILE);
+  seek(INFILE, $file_pos, 0) ||
+    croak("can't seek to $file_pos in $folder: $!\n");
   while (<INFILE>) {
-    if (/^From /) {
-      $i++;
-      if ($i > $last_message_number) {
-	$self->remember_message($i);
-	$self->{Messages}{$i} = $file_pos;
-	$qty_new_messages++;
-      }
-    }
-    print(OUTFILE $_) if ($qty_new_messages);
-    $file_pos = tell(INFILE);
+    print(OUTFILE $_);
   }
-  close(INFILE);
+
   close(OUTFILE);
-  $self->sort_message_list();
+  $self->sort_message_list;
 
   # Create a new copy of the folder and populate it with the messages
   # in the working copy that aren't flagged for deletion.
 
-  if (!open(OUTFILE, ">$tmpfolder")) {
-    unlock_folder($folder);
-    croak("sync can't create $tmpfolder: $!\n");
+  if (!$self->is_readonly) {
+    if (!open(OUTFILE, ">$tmpfolder")) {
+      unlock_folder($folder);
+      croak("can't create $tmpfolder: $!\n");
+    }
+    if (!open(INFILE, $self->{WorkingFile})) {
+      unlock_folder($folder);
+      croak("can't open $self->{WorkingFile}: $!\n");
+    }
+    @statary = stat(INFILE);
+    if (!chmod(($statary[2] & 0777), $tmpfolder)) {
+      unlink($tmpfolder);
+      croak("can't chmod $tmpfolder: $!\n");
+    }
+    
+    $i = 0;
+    while (<INFILE>) {
+      $i++ if (/^From /);
+      print(OUTFILE $_) if (!$self->label_exists($i, 'delete'));
+    }
+    close(INFILE);
+    close(OUTFILE);
+    map {$self->forget_message($_)} $self->select_label('delete');
+    $self->clear_label('delete');
+    $self->sort_message_list;
+    
+    # Move the original folder to a temp location
+    
+    if (!rename($folder, "$folder.old")) {
+      unlock_folder($folder);
+      croak("can't move $folder out of the way: $!\n");
+    }
+    
+    # Move the new folder into place
+    
+    if (!rename($tmpfolder, $folder)) {
+      unlock_folder($folder);
+      croak("gack! can't rename $folder.old to $folder: $!\n")
+	if (!rename("$folder.old", $folder));
+      croak("can't move $folder to $folder.old: $!\n");
+    }
+    
+    # Delete the old original folder
+    
+    if (!unlink("$folder.old")) {
+      unlock_folder($folder);
+      croak("can't unlink $folder.old: $!\n");
+    }
   }
-  if (!open(INFILE, $self->{WorkingFile})) {
-    unlock_folder($folder);
-    croak("sync can't open $self->{WorkingFile}: $!\n");
-  }
-  @statary = stat(INFILE);
-  if (!chmod(($statary[2] & 0777), $tmpfolder)) {
-    unlink($tmpfolder);
-    croak("sync can't chmod $tmpfolder: $!\n");
-  }
 
-  $i = 0;
-  while (<INFILE>) {
-    $i++ if (/^From /);
-    print(OUTFILE $_) if (!defined($self->{Deletes}{$i}));
-  }
-  close(INFILE);
-  close(OUTFILE);
-  map {$self->forget_message($_)} $self->list_deletes();
-  $self->clear_deletes();
-  $self->sort_message_list();
-
-  # Move the original folder to a temp location
-
-  if (!rename($folder, "$folder.old")) {
-    unlock_folder($folder);
-    croak("sync can't move $folder out of the way: $!\n");
-  }
-
-  # Move the new folder into place
-
-  if (!rename($tmpfolder, $folder)) {
-    unlock_folder($folder);
-    croak("sync gack! can't rename $folder.old to $folder: $!\n")
-      if (!rename("$folder.old", $folder));
-    croak("sync can't move $folder to $folder.old: $!\n");
-  }
-
-  # Delete the old original folder
-
-  if (!unlink("$folder.old")) {
-    unlock_folder($folder);
-    croak("sync can't unlink $folder.old: $!\n");
-  }
-
-  # Unlock the folder
   unlock_folder($folder);
 
   return($qty_new_messages);
 }
 
-=head2 pack()
+=head2 pack
 
 Calls the superclass C<pack> method.  This is essentially a no-op
 since mbox folders don't need to be packed.
 
 =cut
 
-sub pack {
-  my $self = shift;
-
-  return($self->SUPER::pack());
-}
+sub pack { return($_[0]->SUPER::pack); }
 
 =head2 get_message($msg_number)
+
+=over 2
 
 =item * Call the superclass C<get_message> method.
 
@@ -307,6 +372,8 @@ reference.
 =item * Delete the temporary file.
 
 =item * Return the B<Mail::Internet> object reference.
+
+=back
 
 =cut
 
@@ -326,9 +393,9 @@ sub get_message {
 
   if (!open(FILE, $file)) {
     unlink($file);
-    croak("get_message can't open $file: $!\n");
+    croak("whoa! can't open $file: $!\n");
   }
-  $message = Mail::Internet->new(<FILE>);
+  $message = new Mail::Internet(<FILE>);
   close(FILE);
   unlink($file);
 
@@ -339,8 +406,8 @@ sub get_message {
 
 If the particular header has never been retrieved then C<get_header>
 loads (in a manner similar to C<get_message>) the header of the given
-mail message into C<$self-E<gt>{Headers}{$msg_number}> and returns the
-object reference.
+mail message into C<$self-E<gt>{Messages}{$msg_number}{Header}> and
+returns the object reference.
 
 If the header for the given mail message has already been retrieved in
 a prior call to C<get_header>, then the cached entry is returned.
@@ -357,19 +424,18 @@ sub get_header {
   my $header;
   local(*FILE);
 
-  return($self->{Headers}{$key}) if ($self->{Headers}{$key});
+  return(undef) if (!$self->SUPER::get_header($key) ||
+		    !defined($self->{Messages}{$key}));
+
+  return($self->{Messages}{$key}{Header}) if ($self->{Messages}{$key}{Header});
   
-  return(undef) unless $self->SUPER::get_header();
-
-  return(undef) if (!defined($self->{Messages}{$key}));
-
   $file = $self->extract_message($key, 0);
 
   if (!open(FILE, $file)) {
     unlink($file);
-    croak("get_header can't open $file: $!\n");
+    croak("can't open $file: $!\n");
   }
-  $header = Mail::Internet->new();
+  $header = new Mail::Internet;
   $header->read_header(\*FILE);
   close(FILE);
   unlink($file);
@@ -380,9 +446,14 @@ sub get_header {
 
 =head2 append_message($message_ref)
 
+=over 2
+
 =item * Call the superclass C<append_message> method.
 
 =item * Lock the folder.
+
+=item * If a 'From ' line isn't present in C<$message_ref> then
+synthesize one.
 
 =item * Append the contents of C<$message_ref> to the folder.
 
@@ -391,6 +462,8 @@ structures of C<$self>.
 
 =item * Unlock the folder.
 
+=back
+
 =cut
 
 sub append_message {
@@ -398,32 +471,68 @@ sub append_message {
   my $message_ref = shift;
 
   my $file_pos;
-  my $message_number = $self->last_message();
+  my $end_file_pos;
+  my $message_number = $self->last_message;
+  my $body;
   local(*FILE);
 
   return(0) unless $self->SUPER::append_message($message_ref);
 
+  $body = $message_ref->body;
   open(FILE, ">>$self->{WorkingFile}") ||
-    croak("append_message can't append to $self->{WorkingFile}: $!\n");
+    croak("can't append to $self->{WorkingFile}: $!\n");
   $file_pos = tell(FILE);
+  print(FILE synth_envelope($message_ref), "\n")
+    if (!$message_ref->get('From '));
   $message_ref->print(\*FILE);
+  # actually, maybe we should always append a blank line
+  print(FILE "\n") if ($body->[$#{$body}] ne "\n");
+  $end_file_pos = tell(FILE);
   close(FILE);
 
   $message_number++;
   $self->remember_message($message_number);
-  $self->{Messages}{$message_number} = $file_pos;
-  $self->sort_message_list();
+  $self->{Messages}{$message_number}{MboxFilePos} = [$file_pos, 0];
+  $self->{Messages}{$message_number}{MboxFilePos}[1] =
+    $end_file_pos - (($message_ref->body->[$#{$message_ref->body}] eq "\n") ?
+		     2 : 1);
+  $self->sort_message_list;
 
   return(1);
 }
 
+# Mbox files must have a 'From ' line at the beginning of each
+# message.  This routine will synthesize one from the 'From:' and
+# 'Date:' fields.  Original solution and code of the following
+# subroutine provided by Andreas Koenig
+
+sub synth_envelope {
+  my $message_ref = shift;
+  my @addrs;
+  my $from;
+  my $date;
+
+  @addrs = Mail::Address->parse($message_ref->get('From'));
+  $from = $addrs[0]->address();
+  $date = ctime(str2time($message_ref->get("date")));
+  chomp($date);
+
+  return("From $from  $date");
+}
+
 =head2 update_message($msg_number, $message_ref)
+
+=over 2
 
 =item * Call the superclass C<update_message> method.
 
 =item * Writes a new copy of the working folder file replacing the
 given message with the contents of the given B<Mail::Internet> message
-reference.
+reference.  It will synthesize a 'From ' line if one isn't present in
+$message_ref.
+
+
+=back
 
 =cut
 
@@ -434,28 +543,31 @@ sub update_message {
 
   my $file_pos = 0;
   my $i = 1;
-  local(*INFILE);
-  local(*OUTFILE);
+  local(*WORKFILE);
+  local(*NEWWORKFILE);
 
   return(0) unless $self->SUPER::update_message($key, $message_ref);
 
-  open(INFILE, $self->{WorkingFile}) ||
+  open(WORKFILE, $self->{WorkingFile}) ||
     croak("can't open $self->{WorkingFile}: $!\n");
-  open(OUTFILE, ">$self->{WorkingFile}N") ||
+  open(NEWWORKFILE, ">$self->{WorkingFile}N") ||
     croak("can't create $self->{WorkingFile}N: $!\n");
   chmod(0600, "$self->{WorkingFile}N") ||
     croak("can't chmod $self->{WorkingFile}N: $!\n");
-  while (<INFILE>) {
+  while (<WORKFILE>) {
     if (/^From /) {
-      $message_ref->print(\*OUTFILE) if ($i == $key);
-      $self->{Messages}{$i} = $file_pos;
+      if ($i == $key) {
+	print(NEWWORKFILE synth_envelope($message_ref), "\n")
+	  if (!$message_ref->get('From '));
+	$message_ref->print(\*NEWWORKFILE);
+      }
       $i++;
     }
-    print(OUTFILE $_) if ($i != $key);
-    $file_pos = tell(OUTFILE);
+    print(NEWWORKFILE $_) if ($i != $key);
   }
-  close(OUTFILE);
-  close(INFILE);
+  close(NEWWORKFILE);
+  close(WORKFILE);
+  $self->remember_mbox_points("$self->{WorkingFile}N", 0);
 
   rename($self->{WorkingFile}, "$self->{WorkingFile}O") ||
     croak("can't rename $self->{WorkingFile}: $!\n");
@@ -465,13 +577,33 @@ sub update_message {
 
   return(1);
 }
+
+=head2 create($foldername)
+
+Creates a new folder named C<$foldername>.  Returns C<0> if the folder
+already exists, otherwise returns of the folder creation was
+successful.
+
+=cut
+
+sub create {
+  my $self = shift;
+  my $foldername = shift;
+  local(*FILE);
+
+  return(0) if (-e $foldername);
+  open(FILE, ">$foldername") || croak("can't create $foldername: $!\n");
+  close(FILE);
+  chmod(0600, $foldername) || croak("can't chmod $foldername: $!\n");
+  return(1);
+}
 ###############################################################################
 sub DESTROY {
   my $self = shift;
 
   # all of these are just in case...
   # the appropriate methods should have removed them already...
-  unlock_folder($self->foldername());
+  unlock_folder($self->foldername);
   unlink($self->{WorkingFile},
 	 "$self->{WorkingFile}N",
 	 "$self->{WorkingFile}O",
@@ -481,24 +613,29 @@ sub DESTROY {
 sub lock_folder {
   my $folder = shift;
 
-  my $i;
+  my $i = 3;
   local(*FILE);
 
-  for ($i = 3; $i; $i--) {
-    if (! -e "$folder.lock") {
-      open(FILE, ">$folder.lock") || croak("can't create $folder.lock: $!\n");
-      close(FILE);
-      return(1);
+  return(lock($folder));
+  if (0) {
+    while ($i--) {
+      if (! -e "$folder.lock") {
+	open(FILE, ">$folder.lock") ||
+	  croak("can't create $folder.lock: $!\n");
+	close(FILE);
+	return(1);
+      }
+      sleep(3);
     }
-    sleep(3);
+    return(0);
   }
-  return(0);
 }
 
 sub unlock_folder {
-  my $folder = shift;
-
-  return((-e "$folder.lock") ? unlink("$folder.lock") : 1);
+  return(unlock($_[0]));
+  if (0) {
+    return((-e "$_[0].lock") ? unlink("$_[0].lock") : 1);
+  }
 }
 
 sub extract_message {
@@ -508,19 +645,18 @@ sub extract_message {
 
   my $msg_file = "$self->{MsgFilePrefix}.$key";
   my $next_msg = $self->next_message($key);
-  my $goal_pos = ($next_msg != -1) ? $self->{Messages}{$next_msg} : 0;
+  my $goal_pos =
+    ($next_msg) ? $self->{Messages}{$next_msg}{MboxFilePos}->[0] : 0;
 
   local(*FOLDER);
   local(*FILE);
 
   open(FOLDER, $self->{WorkingFile}) ||
-    croak("extract_message can't open $self->{WorkingFile}: $!\n");
-  open(FILE, ">$msg_file") ||
-    croak("extract_message can't create $msg_file: $!\n");
-  chmod(0600, $msg_file) ||
-    croak("extract_message can't chmod $msg_file: $!\n");
-  seek(FOLDER, $self->{Messages}{$key}, 0) ||
-    croak("extract_message can't seek to $self->{Messages}{$key} in $self->{WorkingFile}: $!\n");
+    croak("can't open $self->{WorkingFile}: $!\n");
+  open(FILE, ">$msg_file") || croak("can't create $msg_file: $!\n");
+  chmod(0600, $msg_file) || croak("can't chmod $msg_file: $!\n");
+  seek(FOLDER, $self->{Messages}{$key}{MboxFilePos}->[0], 0) ||
+    croak("can't seek to $self->{Messages}{$key}{MboxFilePos}->[0] in $self->{WorkingFile}: $!\n");
   while (<FOLDER>) {
     last if ($goal_pos && (tell(FOLDER) >= $goal_pos));
     last if (!$full_message && /^$/);

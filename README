@@ -4,9 +4,9 @@ This module provides an interface to email folders that is independent
 from the physical folders.  The actual work on folders is done with
 folder interface modules lying 'beneath' the Mail::Folder interface.
 
-WARNING! Think twice about using this module in it's current release
-WARNING! on mail folders that you consider important.  At the very
-WARNING! least make sure you have backup copies.
+WARNING! Think twice about using this module to modify folders that
+WARNING! you consider important.  At the very least make sure you have
+WARNING! backup copies.
 
 WARNING! This code is in evaluation phase.  The interface will
 WARNING! probably change in non-backwards-compatible ways.
@@ -17,42 +17,64 @@ To build and install the package execute the following commands:
 	make test		# optional :-)
 	make install
 
-The TODO file has information on features that aren't present yet.  It
-also has some general thoughts on futures.  The NEWS file has summary
-information on the changes from release to release.
+The TODO file has information on features that aren't present yet.
+The NEWS file has summary information on the changes from release to
+release.
 
 The following modules are required:
-    MailTools	- for handling mail messages
-    File-Tools	- for file copying in the mbox interface
+    MailTools		- for handling mail messages
+    File-Tools		- for file copying in the mbox interface
+    TimeDate		- for date field slurping in the mbox interface
+    File-BasicFLock	- for folder locking in the mbox interface
 
 I've included two folder interfaces:
     + Mail::Folder::Mbox - ye olde standard mailbox format (ugh).
-    + Mail::Folder::Emaul - a folder interface of my own design.
-	It is vaguely MHish. This serves as an example of hooking a
-	folder interface into Mail::Folder.  Eventually, it will grow
-	into a full-featured folder architecture, but for now it's an
-	adequate example.  I have no plans to make it a 100% MH
-	interface, but it should actually be able to read MH folders,
-	albeit without some of the fancier features like sequences and
-	the like.
+    + Mail::Folder::Emaul - an amoebic folder interface of my own design.
+	It is vaguely MHish. Eventually, it will grow into a
+	full-featured folder architecture, but for now it's an
+	adequate example.  It will never be a 100% MH interface, but
+	it can actually read MH folders, albeit without some of the
+	fancier MHisms like sequences and the like.
+
+These interfaces should serve as reasonable examples of hooking a
+folder interface into Mail::Folder.
+
+I don't plan on writing a lot of interfaces, myself, but here is a
+list of some of the ones I'm interested in enough to write (in order
+of likelihood):
+    + maildir (qmail)
+    + nntp
+    + imap
+
+The examples directory contains some sample uses:
+    + getpop.pl	- a simple pop slurper (uses Net::POP3).
+	It doesn't do anything fancy like use a config file or store
+	the password in encrypted form, but it actually works. If you
+	use it, make sure you use the appropriate permissions on the
+	executable.  I might get around to adding encrypted storage of
+	the configuration information at some later date. (contact me
+	if you would like to add that feature yourself - I'll probably
+	incorporate your changes into the base)
+    + from.pl	- a simple variant of from(1).
+	It doesn't do any command-line processing, but it does the
+	basics.  You will probably note that it is considerably slower
+	than from(1) or frm(1L).
 
 Check the documentation for Mail::Folder and the provided folder
 interfaces for information on using the package and adding folder
-interfaces.
+interfaces.  Please let me know if you run across something needs to
+be documented better.
 
 I'm still pondering the details of interfacing to MailTools and
-MIME-parser.  Expect changes here.
+MIME-parser.  Expect changes related to this.
 
 It is 'highly unlikely' that Mail::Folder will ever be capable of
 abstracting every folder feature of every MUA out there in a truly
 transparent way.  I don't, however, think that this detracts from some
 of it's more interesting potential uses:
     + 100% pure perl MUAs
-    + perl scripting against mail folders (folder conversions are a snap :-)
-	Expect some example scripts in the near future. Larry Virden
-	mentioned how nice a filter class ala mailagent would be.
-	That would make a nice addition to the suite of mail modules.
-	Maybe mailagent will evolve into something like that someday.
+    + perl scripting against mail folders
+      (folder conversions are a snap :-)
     + accessing folders from otherwise non-email packages
 
 Please report any bugs/suggestions to <kjj@primenet.com>.

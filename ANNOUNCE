@@ -1,42 +1,37 @@
-The newest version (0.2) of the Mail::Folder module has been posted to
+The newest version (0.3) of the Mail::Folder module has been posted to
 CPAN under my author id (KJOHNSON) and name (Kevin_Johnson).
 
-This module provides an interface to email folders that is independent
-from the physical folders.  The actual work on folders is done with
-folder interface modules lying 'beneath' the Mail::Folder interface.
+This module provides a perl module interface to email folders that is
+independent from the physical folders.  The actual work on folders is
+done with folder interface modules lying 'beneath' the Mail::Folder
+interface.
 
 Refer to the provided README file for additional information.
 
-This code is still in alpha release.  Think twice about using it on
-folders that you consider important (at the very least make backup
-copies :-).  Also, the interface is currently in an evaluation phase.
-The interface will probably change in non-backwards-compatible ways.
+This code is still in alpha release.  Think twice about using it to
+modify folders that you consider important (at the very least make
+backup copies :-).  Also, the interface is currently in an evaluation
+phase.  The interface will probably change in non-backwards-compatible
+ways.
 
-I am keenly interested in feedback from folks interested in playing
-around with the package.
+I am keenly interested in feedback from folks doing stuff with the
+package.
 
-Here are some of the more notable new features and unmalfeatures:
-	+ Added a Unix mbox folder interface.
-	+ Added a dup method to copy a message to a given folder.
-	+ Added a call to an init routine to the base classes 'new' method.
-	+ Added several convenience routines for folder interface developers.
-	+ next_message and prev_message now accept an optional
-	  argument to specify a relative starting point.
+Here are some of the more notable new features and unmalfeatures added
+since the last release:
+	+ Message labels (or named sequences in MH parlance).
+	+ register_folder_interface is performed implicitly now.
+	+ Added a mechanism for dealing with readonly folders.
+	+ Mbox synthesizes the 'From ' line if necessary.
+	+ Mbox uses flock now (oops, I'm an old sysVoid).
+	  (eventually the locking in mbox will be configurable)
+	+ Added a getpop.pl example script.
+	+ Added a from.pl example script.
 	+ Various bug fixes and optimizations.
-
-Besides improving some of the existing features, here is the list of
-items I'm focusing on:
-	+ Implement named message sequence (ala MH).
-	+ Deal with the need to hook into MIME::Entity.
-	  I'm currently looking at a way to provide an interface that
-	  doesn't need to fling Mail::Internet objects.
-	+ Improve emaul folder interface.
-	+ Handle hard errors better.
-	+ Implement some kind of option processing.
 
 Please report any bugs/suggestions to <kjj@primenet.com>.
 
 Copyright (c) 1996 Kevin Johnson <kjj@primenet.com>
 
-All rights reserves.  This program is free software; you can
+All rights reserved.  This program is free software; you can
 redistribute it and/or modify it under the same terms as Perl itself.

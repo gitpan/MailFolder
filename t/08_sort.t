@@ -1,8 +1,6 @@
 #!/usr/bin/perl       # -*-perl-*-
 
-use Mail::Folder;
 use Mail::Folder::Emaul;
-use Mail::Internet;
 
 sub okay_if { print(($_[1] ? "ok $_[0]\n" : "not ok $_[0]\n")) }
 
@@ -11,6 +9,7 @@ for $dir (qw(testfolders testfolders/emaul_seed)) {
   (-d $dir) || die("$dir isn't a directory\n");
   (-r $dir) || die("dir isn't readable\n");
 }
+chmod(0755, "testfolders/emaul_1");
 system("rm -rf testfolders/emaul_1");
 mkdir("testfolders/emaul_1", 0755);
 system("cp testfolders/emaul_seed/[0-9] testfolders/emaul_1");
@@ -23,13 +22,12 @@ $sort_spec = sub {
   return($message2->get('subject') cmp $message1->get('subject'));
 };
 
-print "1..5\n";
+print "1..4\n";
 
-okay_if(1, Mail::Folder::register_folder_type(Mail::Folder::Emaul, 'emaul'));
-okay_if(2, $folder = new Mail::Folder('emaul', "testfolders/emaul_1"));
+okay_if(1, $folder = new Mail::Folder('emaul', "testfolders/emaul_1"));
 @msgs = $folder->sort($sort_spec);
-okay_if(3, ($msgs[0] == 3));
-okay_if(4, ($msgs[1] == 1));
-okay_if(5, $folder->close());
+okay_if(2, ($msgs[0] == 3));
+okay_if(3, ($msgs[1] == 1));
+okay_if(4, $folder->close);
 
 1;

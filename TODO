@@ -1,45 +1,46 @@
-+ Methods not implemented yet:
-	threaded sort
-	message status (unread, replied, forwarded, resent, message size)
-	message_summary
-  Actually, maybe some of the message-handling methods should be part
-  of a message class that abstracts messages a little more than what
-  is currently available with Mail::Internet.  Since the interface to
-  message classes isn't solidified yet, I hesitate to subclass
-  Mail::Internet.  Geez, mail is such a pain... :-)
-
-+ Do some kind of option processing.
-
-+ mbox interface
++ mbox interface (mbox really is a bletcherous little file format)
 	+ add ability to specify locking strategy.
-	+ it's technically possible to do mbox without copying the
-	  entire folder to a working file.  there are situations where
-	  this would a good thing.
+	+ Modularize loading WorkingFile between open, sync, and append
+	+ Look at doing mbox without copying the entire folder to a
+	  working file.
 
 + emaul interface
-	+ have update, refile, and pack(?) queue operations for later syncing
 	+ add folder locking
+	+ have update, refile, and pack(?) queue operations for later syncing
 	+ option for whether it makes backup copies of modified messages
-
-+ Implement named message sequences (ala mh).
-  For folder types that don't have persistance storage of sequences,
-  they will only be in affect while the folder is open.
 
 + Hook into MIME::Entity.
   The fact that Mail::Internet and MIME::Entity have different
-  interfaces still needs to be dealt with. (also see note under
-  'Methods not implemented yet')
+  interfaces still needs to be dealt with.  I'm contemplating just
+  flinging temp filenames in a TempMessage class (to handle automatic
+  deletion) instead of (or in addition to) Mail::Internet references.
+  Since it looks like, internally, Mail::Folder can get away with just
+  knowing about the message header and the message size, this might be
+  a workable solution.
+
++ Add flag to {first,last,next,prev}_message to optionally skip
+  messages that have any of a given list of labels.
+
++ Add Size member to Messages structure and have folder interfaces
+  fill in the information.
+
++ Add ability to sort actual folder.
+
++ Add threaded sort
+
++ Option to not use or store the saved current message & named
+  sequences of interfaces that provide persistant storage of the items.
+
++ Provide methods to alleviate direct access of $self members.
 
 + Handle hard errors better.
   Use an internal function that can be replaced using a method.
-  Maybe use exception processing (this would help Mbox::sync).
-
-+ Provide methods for accessing $self->{Messages}.
-  The goal is to insulate the folder handlers from the internal data
-  structures in Mail::Folder.
+  Maybe use exception processing (this would help Mbox->sync).
 
 + Modularize the prep code in the test modules.  In it's current form,
-  things are getting ugly(er) as more folder interfaces are added.
+  things are getting (very)ugly(er).
+
++ Modularize and consolidate the regression tests.
 ###############################################################################
 + Issues with MailTools:
 	It currently folds header lines - this will cause changes to a
@@ -49,17 +50,15 @@
 		This isn't a problem, but it can be cumbersome for
 		coders.
 
-+ Maybe add an option to do an implicit sync on any operation that
-  alters the folder.  This would hurt pretty bad on monolithic folder
-  types like mbox.  This is a feature request that I haven't made up
-  my mind about.
-
-+ Tim Pierce suggested providing a slightly general engine that
-  understands a common set of methods with config parameters that
-  would help create new folder interfaces with less code.
-
 + Would be nice to have something to manage sets of folders.
+  Maybe a function that is passed a directory and returns a list of
+  valid folders (recursive directory scan).
 
-+ Modularize the regression tests more.
++ Folder type autodetection maybe.
 
-+ An imap folder interface would rock.
++ Various folder interfaces:
+	+ maildir (qmail)
+	+ nntp
+	+ imap
+
++ Start work on the mua that started this thing... :-)

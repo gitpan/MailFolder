@@ -1,4 +1,56 @@
-$Id: NEWS,v 1.1 1996/07/16 04:47:18 kjj Exp $
+$Id: NEWS,v 1.2 1996/08/03 17:32:21 kjj Exp $
+
+-------------------------------------------------------------------------------
+Version 0.3
+-------------------------------------------------------------------------------
+Added an %options argument to 'new'.
+
+Added readonly attribute to folders.
+
+Added a Create option to automatically create folder if it doesn't exist.
+
+Added message labels. Added {first,last,next,prev}_labeled_message methods.
+
+delete_message now uses 'delete' message label instead of it's own
+assocarray.
+
+register_folder_type is now done implicitly.
+
+mbox now uses /\n?\nFrom / as the message separator instead of /^From /.
+
+Added a 'create' method.
+
+Added persistant storage of message labels to emaul.
+
+Mbox now also needs the following modules: TimeDate and File-BasicFLock.
+
+Mbox now uses flock instead of '.lock' for folder locking.
+
+Mbox now checks to see if it thinks the file to open is a valid folder.
+
+Mbox now synthesizes a envelope 'From ' if necessary.
+
+In some of the smaller methods, eliminated use of 'my' and went
+straight to members of @_.
+
+Removed a call to stat in open method in Folder.pm.
+
+Improved the cleanup in close method.
+
+superclass pack now always returns 1.
+
+update_message sets 'updated' label.
+
+0 is now the official message number for a failed operation for
+methods that are supposed to return a message number.
+
+Consolidated several members of object into Message member.
+
+Added documentation on some of the mechanics of writing a folder interface.
+
+Fix a lot of pod formatting problems.
+
+Added getpop.pl and from.pl example scripts.
 
 -------------------------------------------------------------------------------
 Version 0.2
