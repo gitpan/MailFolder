@@ -1,0 +1,43 @@
+$Id: NEWS,v 1.1 1996/07/16 04:47:18 kjj Exp $
+
+-------------------------------------------------------------------------------
+Version 0.2
+-------------------------------------------------------------------------------
+Added an mbox folder interface.
+
+Added dup method that copies a message to a given folder.
+
+Added a Header assoc array member to the Mail::Folder object.  The
+cached header is now no longer stuffed into the Messages assocarray.
+
+Added a SortedMessages array to Mail::Folder object and added a
+sort_message_list method for folder interface developers to allow the
+sort only when needed (eg: after a set of bulk updates like in the
+open method).  This should help for large folders.  The message_list
+method used to sort the message list every time it was called.  It now
+just returns the contents of the SortMessages member.  Besides, the
+list_messages used to have a sort in it that references $a and $b;
+this was interfering with the sort in the sort method (ugh).
+
+remember_message now takes one less arg than before.  This is due to
+adding the cache_header method.
+
+Added a call to an init method to new in the base class.
+
+Added several convenience methods for folder interface developers.
+
+All of the methods that would alter the folder now require a sync to
+commit the changes.  Emaul doesn't honor this yet, but will soon.
+
+next_message and prev_message now take an optional parm to specify a
+relative starting point.  next_message and prev_message used to scan
+the entire list of messages.  They now start at the current message or
+at the given parm passed to them.
+
+Various strategic uses of map and grep.
+
+Various bug fixes uncovered when implementing Mail::Folder::Mbox.
+-------------------------------------------------------------------------------
+Version 0.1
+-------------------------------------------------------------------------------
+Initial alpha release.

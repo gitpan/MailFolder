@@ -12,11 +12,11 @@ for $dir (qw(testfolders testfolders/emaul_seed)) {
   (-r $dir) || die("dir isn't readable\n");
 }
 system("rm -rf testfolders/emaul_1");
-system("mkdir testfolders/emaul_1");
-system("cp testfolders/emaul_seed/* testfolders/emaul_1");
+mkdir("testfolders/emaul_1", 0755);
+system("cp testfolders/emaul_seed/[0-9] testfolders/emaul_1");
 system("echo 1 >testfolders/emaul_1/.current_msg");
 
-print "1..12\n";
+print "1..15\n";
 
 okay_if(1, Mail::Folder::register_folder_type(Mail::Folder::Emaul, 'emaul'));
 okay_if(2, $folder = new Mail::Folder('emaul', "testfolders/emaul_1"));
@@ -29,6 +29,9 @@ okay_if(8, ($folder->sync() == 0));
 okay_if(9, !(-e "testfolders/emaul_1/1"));
 okay_if(10, (-e "testfolders/emaul_1/3"));
 okay_if(11, (-e "testfolders/emaul_1/4"));
-okay_if(12, $folder->close());
+okay_if(12, $folder->dup(3, $folder));
+okay_if(13, (-e "testfolders/emaul_1/3"));
+okay_if(14, (-e "testfolders/emaul_1/5"));
+okay_if(15, $folder->close());
 
 1;

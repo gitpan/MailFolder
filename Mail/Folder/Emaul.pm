@@ -5,6 +5,8 @@
 # All rights reserved. This program is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
+#
+# $Id: Emaul.pm,v 1.2 1996/07/16 04:47:18 kjj Exp $
 
 package Mail::Folder::Emaul;
 @ISA = qw(Mail::Folder);
@@ -13,8 +15,8 @@ package Mail::Folder::Emaul;
 
 Mail::Folder::Emaul - An Emaul folder interface for Mail::Folder.
 
-I<B<WARNING: This code is in alpha release.>
-Expect the interface to change.>
+I<B<WARNING: This code is in alpha release.> Expect the interface to
+change.>
 
 =head1 SYNOPSYS
 
@@ -41,15 +43,15 @@ use Mail::Internet;
 use Carp;
 use vars qw($VERSION);
 
-$VERSION = "0.01";
+$VERSION = "0.02";
 
 =head1 METHODS
 
 =head2 open($folder_name)
 
-=item * Call the superclass B<open> method
+=item * Call the superclass C<open> method
 
-=item * For every message file in the $folder_name directory, add the
+=item * For every message file in the C<$folder_name> directory, add the
 message_number to the object's list of messages.
 
 =item * Load the contents of C<$folder_dir/.current_msg> into
@@ -61,14 +63,13 @@ sub open {
   my $self = shift;
   my $file = shift;
   
-  my($msg, $current_message, $message);
+  my($current_message, $message);
   local(*FILE);
   
   return(0) unless $self->SUPER::open($file);
-  
-  foreach $msg (get_folder_msgs($self->foldername())) {
-    $self->remember_message($msg, 0);
-  }
+
+  map($self->remember_message($_), get_folder_msgs($self->foldername()));
+  $self->sort_message_list();
   
   if (open(FILE, $self->foldername() . "/.current_msg")) {
     $current_message = <FILE>;
@@ -83,7 +84,7 @@ sub open {
 
 =head2 close()
 
-Does nothing except call the B<close> method of the superclass.
+Does nothing except call the C<close> method of the superclass.
 
 =cut
 
@@ -95,7 +96,7 @@ sub close {
 
 =head2 sync()
 
-=item * Call the superclass B<sync> method
+=item * Call the superclass C<sync> method
 
 =item * For every pending delete, unlink that file in the folder
 directory
@@ -120,21 +121,23 @@ sub sync {
   my $current_message = $self->current_message();
   my $qty_new_messages = 0;
   my $msg;
+  my @msgs;
   local(*FILE);
   
   return(-1) if ($self->SUPER::sync() == -1);
 
-  foreach $msg ($self->list_deletes()) {
-    unlink($self->foldername() . "/$msg");
-  }
-  $self->clear_deletes();
-  
   foreach $msg (get_folder_msgs($self->foldername())) {
     if (!defined($self->{Messages}{$msg})) {
-      $self->remember_message($msg, 0);
+      $self->remember_message($msg);
       $qty_new_messages++;
     }
   }
+  
+  @msgs = map {$self->foldername() . "/$_"} $self->list_deletes();
+  unlink(@msgs);
+  map {$self->forget_message($_)} $self->list_deletes();
+  $self->clear_deletes();
+  $self->sort_message_list();
   
   open(FILE, ">" . $self->foldername() . "/.current_msg") ||
     croak("can't write " . $self->foldername() . "/.current_msg: $!");
@@ -146,7 +149,7 @@ sub sync {
 
 =head2 pack()
 
-Calls the superclass B<pack> method.
+Calls the superclass C<pack> method.
 
 Renames the message files in the folder so that there are no
 gaps in the numbering sequence.
@@ -159,20 +162,21 @@ It also tweaks current_message accordingly.
 It will abandon the operation and return C<0> if a C<rename> fails,
 otherwise it returns C<1>.
 
+Please note that C<pack> acts on the real folder.
+
 =cut
 
 sub pack {
   my $self = shift;
   
-  my(@msgs, $msg);
   my($newmsg) = 0;
   my($folder) = $self->foldername();
   my($current_message) = $self->current_message();
+  my $msg;
   
   return(0) unless $self->SUPER::pack();
   
-  @msgs = $self->message_list();
-  foreach $msg (@msgs) {
+  foreach $msg ($self->message_list()) {
     $newmsg++;
     if ($msg > $newmsg) {
       return(0) if (!rename("$folder/$msg", "$folder/$newmsg"));
@@ -180,16 +184,18 @@ sub pack {
 	return(0) if (!rename("$folder/,$msg", "$folder/,$newmsg"));
       }
       $self->current_message($newmsg) if ($msg == $current_message);
-      $self->remember_message($newmsg, $self->{Messages}{$msg});
+      $self->remember_message($newmsg);
+      $self->cache_header($newmsg, $self->{Headers}{$msg});
       $self->forget_message($msg);
     }
   }
+  $self->sort_message_list();
   return(1);
 }
 
 =head2 get_message($msg_number)
 
-Calls the superclass B<get_message> method.
+Calls the superclass C<get_message> method.
 
 Retrieves the given mail message file into a B<Mail::Internet> object
 reference and returns the reference.
@@ -203,7 +209,7 @@ sub get_message {
   my $message;
   local(*FILE);
   
-  return(undef) unless $self->SUPER::get_message();
+  return(undef) unless $self->SUPER::get_message($key);
 
   if (defined($self->{Messages}{$key})) {
     open(FILE, $self->foldername() . "/$key") ||
@@ -217,20 +223,20 @@ sub get_message {
 
 =head2 get_header($msg_number)
 
-The C<$self-E<gt>{Messages}> associative array in a B<Mail::Folder> object
-is used to hold B<Mail::Internet> object references containing the
-headers of the mail messages in the folder.  For performance reasons,
-the header references aren't populated immediately in the B<open>
-method, they are retrieved by B<get_header> as needed.
+The C<$self-E<gt>{Headers}> associative array in a B<Mail::Folder>
+object is used to hold B<Mail::Internet> object references containing
+the headers of the mail messages in the folder.  For performance
+reasons, the header references aren't retrieved immediately by the
+C<open> method, they are retrieved by C<get_header> as needed.
 
-If the particular header has never been retrieved then B<get_header>
+If the particular header has never been retrieved then C<get_header>
 loads the header of the given mail message into
-C<$self-E<gt>{Messages}{$msg_number}> and returns the object reference
+C<$self-E<gt>{Headers}{$msg_number}> and returns the object reference
 
-If the header for the given mail messages has already been retrieved
-in a prior call to B<get_header>, then it is returned.
+If the header for the given mail message has already been retrieved in
+a prior call to C<get_header>, then the cached entry is returned.
 
-It also calls the superclass B<get_header> method.
+It also calls the superclass C<get_header> method.
 
 =cut
 
@@ -241,15 +247,15 @@ sub get_header {
   my $header;
   local(*FILE);
 
-  return($self->{Messages}{$key}) if ($self->{Messages}{$key});
+  return($self->{Headers}{$key}) if ($self->{Headers}{$key});
   
-  return(undef) unless $self->SUPER::get_header();
+  return(undef) unless $self->SUPER::get_header($key);
 
   if (open(FILE, $self->foldername() . "/$key")) {
     $header = Mail::Internet->new();
     $header->read_header(\*FILE);
     close(FILE);
-    $self->remember_message($key, $header);
+    $self->cache_header($key, $header);
     return($header);
   }
   return(undef);
@@ -257,7 +263,7 @@ sub get_header {
 
 =head2 append_message($message_ref)
 
-=item * Call the superclass B<append_message> method
+=item * Call the superclass C<append_message> method.
 
 =item * Retrieve the highest message number in the folder
 
@@ -266,30 +272,40 @@ sub get_header {
 =item * Create a new mail message file in the folder with the
 contents of C<$message_ref>.
 
+Please note that, contrary to the documentation for B<Mail::Folder>,
+actually updates the real folder, rather than queueing it up for a
+subsequent sync.  The C<dup> and C<refile> methods are also
+affected. This will be fixed soon.
+
 =cut
 
 sub append_message {
   my $self = shift;
   my $message_ref = shift;
   
-  my($message_num);
+  my($message_num) = $self->last_message();
   local(*FILE);
   
-  return(0) unless $self->SUPER::append_message();
+  return(0) unless $self->SUPER::append_message($message_ref);
 
-  $message_num = $self->last_message();
   $message_num++;
   write_message($self->foldername(), $message_num, $message_ref);
-  $self->remember_message($message_num, $message_ref->header());
+  $self->remember_message($message_num);
+  $self->cache_header($message_num, $message_ref->header());
+  $self->sort_message_list();
   return(1);
 }
 
 =head2 update_message($msg_number, $message_ref)
 
-=item * Call the superclass B<update_message> method.
+=item * Call the superclass C<update_message> method.
 
 =item * Replaces the contents of the given mail file with the contents of
 C<$message_ref>.
+
+Please note that, contrary to the documentation for B<Mail::Folder>,
+actually updates the real folder, rather than queueing it up for a
+subsequent sync.  This will be fixed soon.
 
 =cut
 
@@ -300,9 +316,7 @@ sub update_message {
   
   local(*FILE);
   
-  return(0) if (!defined($self->{Messages}{$key}));
-  
-  return(0) unless $self->SUPER::update_message();
+  return(0) unless $self->SUPER::update_message($key, $message_ref);
 
   write_message($self->foldername(), $key, $message_ref);
   
@@ -312,14 +326,11 @@ sub update_message {
 sub get_folder_msgs {
   my $folder_dir = shift;
   
-  my(@files, $file);
+  my @files;
   local(*DIR);
   
   opendir(DIR, $folder_dir) || croak("can't open $folder_dir: $!");
-  foreach $file (readdir(DIR)) {
-    next if ($file !~ /^\d+$/);
-    push(@files, $file);
-  }
+  @files = grep(/^\d+$/, readdir(DIR));
   closedir(DIR);
   
   return(sort {$a <=> $b} @files);

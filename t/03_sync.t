@@ -12,8 +12,8 @@ for $dir (qw(testfolders testfolders/emaul_seed)) {
   (-r $dir) || die("dir isn't readable\n");
 }
 system("rm -rf testfolders/emaul_1");
-system("mkdir testfolders/emaul_1");
-system("cp testfolders/emaul_seed/* testfolders/emaul_1");
+mkdir("testfolders/emaul_1", 0755);
+system("cp testfolders/emaul_seed/[0-9] testfolders/emaul_1");
 system("echo 1 >testfolders/emaul_1/.current_msg");
 
 print "1..5\n";
